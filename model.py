@@ -1,70 +1,26 @@
 import torch
-import torchvision
-import torchvision.transforms as transforms
-
 from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
-
-
-# DATASETS
-DATASET = "SVHN"
-
-transform = transforms.Compose(
-    [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
-)
-
-if DATASET == "FashionMNIST":
-    training_set = torchvision.datasets.FashionMNIST(
-        "./data", train=True, transform=transform, download=True
-    )
-    validation_set = torchvision.datasets.FashionMNIST(
-        "./data", train=False, transform=transform, download=True
-    )
-elif DATASET == "SVHN":
-    training_set = torchvision.datasets.SVHN(
-        "./data", split="train", transform=transform, download=True
-    )
-    validation_set = torchvision.datasets.SVHN(
-        "./data", split="train", transform=transform, download=True
-    )
-elif DATASET == "CIFAR10":
-    training_set = torchvision.datasets.CIFAR10(
-        "./data", train=True, transform=transform, download=True
-    )
-    validation_set = torchvision.datasets.CIFAR10(
-        "./data", train=False, transform=transform, download=True
-    )
-
-training_loader = torch.utils.data.DataLoader(training_set, batch_size=4, shuffle=True)
-validation_set = torch.utils.data.DataLoader(
-    validation_set, batch_size=4, shuffle=False
-)
-
-dataiter = iter(training_loader)
-images, labels = next(dataiter)
-
-print(images.size())
-
-img_dim = images.size()
-img_grid = torchvision.utils.make_grid(images)
 
 
 # MODEL
-import torch.functional as F
-
-
 class LeNet(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, input_dim=[4, 1, 32, 32]):
         super(LeNet, self).__init__()
 
-        self.conv1 = torch.nn.Conv2d(img_dim[1], 6, 5)
-        self.conv2 = torch.nn.Conv2d(6, 16, 5)
+        # LOSS
+        self.loss_fn = torch.nn.CrossEntropyLoss()
+
+        # NET
+        self.conv1 = torch.nn.Conv2d(input_dim[1], 6, 5, stride=1)
+        self.conv2 = torch.nn.Conv2d(6, 16, 5, stride=1)
 
         self.pool = torch.nn.MaxPool2d(2)
 
         self.relu = torch.nn.ReLU()
 
-        self.fc1 = torch.nn.Linear(16 * 5 * 5, 120)  # 왜 28일땐 4, 32일땐 5?
+        dim = ((input_dim[2] - 5 + 1) // 2 - 5 + 1) // 2
+
+        self.fc1 = torch.nn.Linear(16 * dim * dim, 120)
         self.fc2 = torch.nn.Linear(120, 84)
         self.fc3 = torch.nn.Linear(84, 10)
 
@@ -84,79 +40,66 @@ class LeNet(torch.nn.Module):
             num_features *= s
         return num_features
 
+    def train_one_epoch(self, training_loader, optimizer, epoch_index, tb_writer):
+        running_loss = 0.0
+        last_loss = 0.0
 
-model = LeNet()
+        for i, data in enumerate(training_loader):
+            inputs, labels = data
 
+            optimizer.zero_grad()
 
-# LOSS
-loss_fn = torch.nn.CrossEntropyLoss()
+            outputs = self(inputs)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+            loss = self.loss_fn(outputs, labels)
+            loss.backward()
 
+            optimizer.step()
 
-# TRAINING
-def train_one_epoch(epoch_index, tb_writer):
-    running_loss = 0.0
-    last_loss = 0.0
+            running_loss += loss.item()
+            if i % 1000 == 999:
+                last_loss = running_loss / 1000
+                tb_x = epoch_index * len(training_loader) + i + 1
+                tb_writer.add_scalar("Loss/train", last_loss, tb_x)
+                running_loss = 0.0
 
-    for i, data in enumerate(training_loader):
-        inputs, labels = data
+        return last_loss
 
-        optimizer.zero_grad()
+    def train_model(
+        self,
+        epochs,
+        training_loader,
+        validation_loader,
+        lr=0.001,
+        momentum=0.9,
+        writer: SummaryWriter = None,
+    ):
+        optimizer = torch.optim.SGD(self.parameters(), lr=lr, momentum=momentum)
 
-        outputs = model(inputs)
+        for epoch in range(epochs):
+            self.train(True)
+            avg_loss = self.train_one_epoch(training_loader, optimizer, epoch, writer)
 
-        loss = loss_fn(outputs, labels)
-        loss.backward()
+            running_vloss = 0.0
 
-        optimizer.step()
+            self.eval()
 
-        running_loss += loss.item()
-        if i % 1000 == 999:
-            last_loss = running_loss / 1000
-            tb_x = epoch_index * len(training_loader) + i + 1
-            tb_writer.add_scalar("Loss/train", last_loss, tb_x)
-            running_loss = 0.0
+            with torch.no_grad():
+                for i, vdata in enumerate(validation_loader):
+                    vinputs, vlabels = vdata
+                    voutputs = self(vinputs)
+                    vloss = self.loss_fn(voutputs, vlabels)
+                    running_vloss += vloss
 
-    return last_loss
+            avg_vloss = running_vloss / (i + 1)
+            print("LOSS train {} valid {}".format(avg_loss, avg_vloss))
 
+            writer.add_scalars(
+                "Training vs. Validation Loss",
+                {"Training": avg_loss, "Validation": avg_vloss},
+                epoch + 1,
+            )
 
-# MAIN
-# timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-# writer = SummaryWriter("runs/fashion_trainer_{}".format(timestamp))
-writer = SummaryWriter("runs/{}_1".format(DATASET))
-writer.add_image("Samples {}".format(DATASET), img_grid)
+            writer.flush()
 
-epoch_number = 0
-
-EPOCHS = 10
-
-best_vloss = 1000000.0
-
-for epoch in range(EPOCHS):
-    model.train(True)
-    avg_loss = train_one_epoch(epoch_number, writer)
-
-    running_vloss = 0.0
-
-    model.eval()
-
-    with torch.no_grad():
-        for i, vdata in enumerate(validation_set):
-            vinputs, vlabels = vdata
-            voutputs = model(vinputs)
-            vloss = loss_fn(voutputs, vlabels)
-            running_vloss += vloss
-
-    avg_vloss = running_vloss / (i + 1)
-    print("LOSS train {} valid {}".format(avg_loss, avg_vloss))
-
-    writer.add_scalars(
-        "Training vs. Validation Loss",
-        {"Training": avg_loss, "Validation": avg_vloss},
-        epoch_number + 1,
-    )
-
-    writer.flush()
-
-    epoch_number += 1
+            epoch += 1
