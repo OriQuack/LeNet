@@ -60,7 +60,8 @@ class LeNet(torch.nn.Module):
             if i % 1000 == 999:
                 last_loss = running_loss / 1000
                 tb_x = epoch_index * len(training_loader) + i + 1
-                tb_writer.add_scalar("Loss/train", last_loss, tb_x)
+                if tb_writer is not None:
+                    tb_writer.add_scalar("Loss/train", last_loss, tb_x)
                 running_loss = 0.0
 
         return last_loss
@@ -75,7 +76,9 @@ class LeNet(torch.nn.Module):
         weight_decay=0,
         writer: SummaryWriter = None,
     ):
-        optimizer = torch.optim.SGD(self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+        optimizer = torch.optim.SGD(
+            self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
+        )
 
         for epoch in range(epochs):
             self.train(True)
@@ -95,12 +98,13 @@ class LeNet(torch.nn.Module):
             avg_vloss = running_vloss / (i + 1)
             print("LOSS train {} valid {}".format(avg_loss, avg_vloss))
 
-            writer.add_scalars(
-                "Training vs. Validation Loss",
-                {"Training": avg_loss, "Validation": avg_vloss},
-                epoch + 1,
-            )
+            if writer is not None:
+                writer.add_scalars(
+                    "Training vs. Validation Loss",
+                    {"Training": avg_loss, "Validation": avg_vloss},
+                    epoch + 1,
+                )
 
-            writer.flush()
+                writer.flush()
 
             epoch += 1
