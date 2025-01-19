@@ -3,7 +3,7 @@ import torchvision
 import torchvision.transforms as transforms
 
 
-def load_dataset(dataset, transform=None):
+def load_dataset(dataset, batch_size=4, transform=None):
     transform = (
         transform
         if transform is not None
@@ -37,10 +37,10 @@ def load_dataset(dataset, transform=None):
         raise Exception("Dataset not available")
 
     training_loader = torch.utils.data.DataLoader(
-        training_set, batch_size=4, shuffle=True
+        training_set, batch_size=batch_size, shuffle=True
     )
     validation_loader = torch.utils.data.DataLoader(
-        validation_set, batch_size=4, shuffle=False
+        validation_set, batch_size=batch_size, shuffle=False
     )
 
     return training_loader, validation_loader

@@ -72,9 +72,10 @@ class LeNet(torch.nn.Module):
         validation_loader,
         lr=0.001,
         momentum=0.9,
+        weight_decay=0,
         writer: SummaryWriter = None,
     ):
-        optimizer = torch.optim.SGD(self.parameters(), lr=lr, momentum=momentum)
+        optimizer = torch.optim.SGD(self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
 
         for epoch in range(epochs):
             self.train(True)
