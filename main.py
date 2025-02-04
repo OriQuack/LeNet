@@ -1,4 +1,5 @@
 import argparse
+import time
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
@@ -47,8 +48,8 @@ if __name__ == "__main__":
 
     # Hyperparameters
     parser.add_argument("--batch", type=int, default=16)
-    parser.add_argument("--epoch", type=int, default=50)
-    parser.add_argument("--lr", type=float, deafult=0.001)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--weight_decay", type=float, default=0.0)
 
@@ -70,7 +71,7 @@ if __name__ == "__main__":
 
     # Init tensorboard
     if params.tensorboard:
-        writer = SummaryWriter("runs/{}_".format(params.dataset))
+        writer = SummaryWriter("runs/{}_".format(params.dataset, time.time()))
     else:
         writer = None
 
