@@ -9,7 +9,7 @@ from run import train_one_epoch
 from run import test_one_epoch
 
 
-def train_one_dataset(params, training_loader, validation_loader, tb_writer):
+def train_one_dataset(params, training_loader, validation_loader, writer):
     model = load_model(params)
 
     # Optimizer
@@ -45,12 +45,15 @@ def train_one_dataset(params, training_loader, validation_loader, tb_writer):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Model description")
 
-    # parser.add_argument("--train", type=bool, default=True)
-    # parser.add_argument("--test", type=bool, default=False)
+    # Model
     parser.add_argument("--model", type=str, default="LeNet")
 
+    # Mode
+    # parser.add_argument("--train", type=bool, default=True)
+    # parser.add_argument("--test", type=bool, default=False)
+
     # Hyperparameters
-    parser.add_argument("--batch", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--momentum", type=float, default=0.9)
@@ -61,20 +64,33 @@ if __name__ == "__main__":
 
     # Tensorboard
     parser.add_argument("--tensorboard", type=bool, default=True)
+    parser.add_argument("--save_name", type=str, default="default")
+
+    # GPU in Apple Silicon
+    parser.add_argument("--device", type=str, default="cpu")
 
     params = parser.parse_args()
-    params.save_name = params.dataset
+
+    # Use gpu
+    if params.device == "gpu" and torch.backends.mps.is_available():
+        torch.set_default_device("mps")
+        print("Training on MPS...")
+    else:
+        torch.device("cpu")
 
     # Load dataset
     training_loader, validation_loader, img_dim = load_dataset(
-        params.dataset, batch_size=params.batch
+        params.dataset, batch_size=params.batch_size
     )
-
     params.img_dim = img_dim
 
     # Init tensorboard
     if params.tensorboard:
-        writer = SummaryWriter("runs/{}_".format(params.dataset, time.time()))
+        writer = SummaryWriter(
+            "runs/{}_{}_{}".format(
+                params.dataset, params.model, params.save_name, time.time()
+            )
+        )
     else:
         writer = None
 

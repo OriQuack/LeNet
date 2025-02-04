@@ -14,6 +14,7 @@ class ResNet(torch.nn.Module):
         self.conv1 = torch.nn.Conv2d(input_channel, 64, 3)
 
         self.bn = torch.nn.BatchNorm2d(64)
+        self.relu = torch.nn.ReLU()
 
         self.conv_res = torch.nn.Conv2d(64, 64, 3, padding=1)
         # Kaiming Initialization
@@ -22,11 +23,10 @@ class ResNet(torch.nn.Module):
         )
         # Residual block
         self.res_block = torch.nn.Sequential(
-            self.conv_res,
             self.bn,
+            self.relu,
+            self.conv_res,
         )
-
-        self.relu = torch.nn.ReLU()
 
         dim = input_size - 2
         self.avg_pool = torch.nn.AvgPool2d(dim)
@@ -40,7 +40,7 @@ class ResNet(torch.nn.Module):
         x = self.relu(self.bn(self.conv1(inputs)))
 
         for _ in range(10):
-            x = self.relu(self.res_block(x) + x)
+            x = self.res_block(x) + x
 
         x = self.avg_pool(x)
         x = torch.squeeze(x)
