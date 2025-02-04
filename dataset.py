@@ -43,4 +43,9 @@ def load_dataset(dataset, batch_size=4, transform=None):
         validation_set, batch_size=batch_size, shuffle=False
     )
 
-    return training_loader, validation_loader
+    # Get image dimensions
+    dataiter = iter(training_loader)
+    images, _ = next(dataiter)
+    img_dim = list(images.size())
+
+    return training_loader, validation_loader, img_dim

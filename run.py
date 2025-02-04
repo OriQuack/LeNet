@@ -1,30 +1,42 @@
 import torch
-import torchvision
-from torch.utils.tensorboard import SummaryWriter
 
-from dataset import load_dataset
-from model import LeNet
+def train_one_epoch(net, training_loader, optimizer, epoch_index, tb_writer):
+    running_loss = 0.0
+    last_loss = 0.0
 
-# SVHN, FashionMNIST, CIFAR10
-DATASET = "FashionMNIST"
+    for i, data in enumerate(training_loader):
+        inputs, labels = data
 
-# Get dataset loaders
-training_loader, validation_loader = load_dataset(DATASET, batch_size=1)
+        optimizer.zero_grad()
 
-# Get image dimensions
-dataiter = iter(training_loader)
-images, labels = next(dataiter)
-img_dim = list(images.size())
+        loss, outputs = net(inputs, labels)
 
-# Init tensorboard
-writer = SummaryWriter("runs/{}_".format(DATASET))
+        loss.backward()
 
-# Add images
-img_grid = torchvision.utils.make_grid(images)
-writer.add_image("Samples {}".format(DATASET), img_grid)
+        optimizer.step()
 
-# Run test
-model = LeNet(img_dim)
-model.train_model(
-    20, training_loader, validation_loader, lr=0.00001, momentum=0.9, writer=writer
-)
+        running_loss += loss.item()
+        if i % 1000 == 999:
+            last_loss = running_loss / 1000
+            tb_x = epoch_index * len(training_loader) + i + 1
+            if tb_writer is not None:
+                tb_writer.add_scalar("Loss/train", last_loss, tb_x)
+            running_loss = 0.0
+
+    return last_loss
+
+
+def test_one_epoch(net, test_loader, optimizer, epoch_index, tb_writer):
+    running_loss = 0.0
+
+    net.eval()
+
+    with torch.no_grad():
+        for i, data in enumerate(test_loader):
+            inputs, labels = data
+            loss, voutputs = net(inputs, labels)
+            running_loss += loss
+
+    avg_loss = running_loss / (i + 1)
+
+    return avg_loss
