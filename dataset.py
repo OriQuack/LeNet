@@ -12,21 +12,21 @@ def load_dataset(dataset, batch_size=4, transform=None):
         )
     )
 
-    if dataset == "FashionMNIST":
+    if dataset == "FashionMNIST":  # 1x28x28
         training_set = torchvision.datasets.FashionMNIST(
             "./data", train=True, transform=transform, download=True
         )
         validation_set = torchvision.datasets.FashionMNIST(
             "./data", train=False, transform=transform, download=True
         )
-    elif dataset == "SVHN":
+    elif dataset == "SVHN":  # 3x32x32
         training_set = torchvision.datasets.SVHN(
             "./data", split="train", transform=transform, download=True
         )
         validation_set = torchvision.datasets.SVHN(
             "./data", split="train", transform=transform, download=True
         )
-    elif dataset == "CIFAR10":
+    elif dataset == "CIFAR10":  # 3x32x32
         training_set = torchvision.datasets.CIFAR10(
             "./data", train=True, transform=transform, download=True
         )

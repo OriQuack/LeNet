@@ -1,24 +1,24 @@
 import torch
-from torch.utils.tensorboard import SummaryWriter
 
 
-# MODEL
 class LeNet(torch.nn.Module):
-    def __init__(self, input_dim=[4, 1, 32, 32]):
+    def __init__(self, input_dim):
         super(LeNet, self).__init__()
 
         # LOSS
         self.loss_fn = torch.nn.CrossEntropyLoss()
 
         # NET
-        self.conv1 = torch.nn.Conv2d(input_dim[1], 6, 5, stride=1)
+        input_channel = input_dim[1]
+        input_size = input_dim[2]
+        self.conv1 = torch.nn.Conv2d(input_channel, 6, 5, stride=1)
         self.conv2 = torch.nn.Conv2d(6, 16, 5, stride=1)
 
         self.pool = torch.nn.MaxPool2d(2)
 
         self.relu = torch.nn.ReLU()
 
-        dim = ((input_dim[2] - 5 + 1) // 2 - 5 + 1) // 2
+        dim = ((input_size - 5 + 1) // 2 - 5 + 1) // 2
 
         self.fc1 = torch.nn.Linear(16 * dim * dim, 120)
         self.fc2 = torch.nn.Linear(120, 84)

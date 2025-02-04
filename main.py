@@ -12,12 +12,15 @@ from run import test_one_epoch
 def train_one_dataset(params, training_loader, validation_loader, tb_writer):
     model = load_model(params)
 
+    # Optimizer
     optimizer = torch.optim.SGD(
         model.parameters(),
         lr=params.lr,
         momentum=params.momentum,
         weight_decay=params.weight_decay,
     )
+
+    # Learning rate scheduler 없음
 
     for epoch in range(params.epochs):
         # Train
