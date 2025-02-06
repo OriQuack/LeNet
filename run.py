@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 
 
 def train_one_epoch(net, params, training_loader, optimizer, epoch_index, tb_writer):
@@ -7,7 +8,12 @@ def train_one_epoch(net, params, training_loader, optimizer, epoch_index, tb_wri
     running_accuracy = 0.0
     last_accuracy = 0.0
 
-    for i, data in enumerate(training_loader):
+    for i, data in tqdm(
+        enumerate(training_loader),
+        desc="train",
+        unit="batch",
+        total=len(training_loader),
+    ):
         inputs, labels = data
 
         optimizer.zero_grad()
@@ -40,7 +46,9 @@ def test_one_epoch(net, params, test_loader, optimizer, epoch_index, tb_writer):
     net.eval()
 
     with torch.no_grad():
-        for i, data in enumerate(test_loader):
+        for i, data in tqdm(
+            enumerate(test_loader), desc="test", unit="batch", total=len(test_loader)
+        ):
             inputs, labels = data
             loss, outputs = net(inputs, labels)
             running_loss += loss

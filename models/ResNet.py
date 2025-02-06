@@ -16,15 +16,15 @@ class ResNet(nn.Module):
         self.conv1 = nn.Conv2d(input_channel, 64, 3, padding=1)
 
         self.bn = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU()
+        self.max_pool = nn.MaxPool2d(2, 2)
 
         self.resBlock1 = ResBlock(64)
         self.resBlock2 = ResBlock(128, first_conv_stride=True)
         self.resBlock3 = ResBlock(256, first_conv_stride=True)
         self.resBlock4 = ResBlock(512, first_conv_stride=True)
 
-        self.relu = nn.ReLU()
-
-        self.avg_pool = nn.AvgPool2d(512)
+        self.avg_pool = nn.AvgPool2d(4)
 
         self.fc = nn.Linear(512, 10)
         # Kaiming Initialization
@@ -43,6 +43,7 @@ class ResNet(nn.Module):
         outputs = self.fc(x)
 
         loss = self.loss_fn(outputs, labels)
+        _, outputs = torch.max(outputs, dim=1)
 
         return loss, outputs
 
@@ -53,17 +54,19 @@ class ResBlock(nn.Module):
         self.first_conv_stride = first_conv_stride
 
         if self.first_conv_stride:
-            self.conv1 = nn.Conv2d(channel, channel, 3, padding=1, stride=2)
+            self.conv1 = nn.Conv2d(channel // 2, channel, 3, padding=1, stride=2)
         else:
             self.conv1 = nn.Conv2d(channel, channel, 3, padding=1)
 
         self.conv2 = nn.Conv2d(channel, channel, 3, padding=1)
+        
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.conv1.weight, mode="fan_in", nonlinearity="relu")
         nn.init.kaiming_normal_(self.conv2.weight, mode="fan_in", nonlinearity="relu")
 
         self.bn = nn.BatchNorm2d(channel)
         self.relu = nn.ReLU()
+        self.pool = nn.MaxPool2d(2, 2)
 
     def forward(self, inputs):
         x = self.relu(self.bn(self.conv1(inputs)))
@@ -71,6 +74,7 @@ class ResBlock(nn.Module):
         if self.first_conv_stride:
             dim_size = inputs.shape[1]
             inputs = F.pad(inputs, (0, 0, 0, 0, 0, dim_size), "constant", 0)
+            inputs = self.pool(inputs)
         outputs = self.relu(x + inputs)
 
         return outputs

@@ -32,9 +32,11 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
         avg_vloss, avg_vaccuracy = test_one_epoch(
             model, params, validation_loader, optimizer, epoch, writer
         )
-
-        print("LOSS train {} valid {}".format(last_loss, avg_vloss))
-        print("ACCURACY train {} valid {}".format(last_accuracy, avg_vaccuracy))
+        print(f"##### EPOCH {epoch + 1} #####")
+        print("LOSS\ntrain {:.5f} valid {:.5f}".format(last_loss, avg_vloss))
+        print(
+            "ACCURACY\ntrain {:.5f} valid {:.5f}\n".format(last_accuracy, avg_vaccuracy)
+        )
 
         if writer is not None:
             writer.add_scalars(
@@ -63,7 +65,7 @@ if __name__ == "__main__":
 
     # Hyperparameters
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--weight_decay", type=float, default=0.0)
@@ -73,7 +75,7 @@ if __name__ == "__main__":
 
     # Tensorboard
     parser.add_argument("--tensorboard", type=bool, default=True)
-    parser.add_argument("--save_name", type=str, default="default")
+    parser.add_argument("--save_name", type=str, default="")
 
     # GPU in Apple Silicon
     parser.add_argument("--device", type=str, default="cpu")
@@ -96,8 +98,14 @@ if __name__ == "__main__":
     # Init tensorboard
     if params.tensorboard:
         writer = SummaryWriter(
-            "runs/{}_{}_{}".format(
-                params.dataset, params.model, params.save_name, time.time()
+            "runs/{}/{}_b{}_lr{}_wd_{}_{}_{}".format(
+                params.model,
+                params.dataset,
+                params.batch_size,
+                params.lr,
+                params.weight_decay,
+                params.save_name,
+                time.time(),
             )
         )
     else:
