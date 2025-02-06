@@ -1,9 +1,9 @@
 import torch
 
 
-class ResNet(torch.nn.Module):
+class PreActResNet(torch.nn.Module):
     def __init__(self, input_dim):
-        super(ResNet, self).__init__()
+        super(PreActResNet, self).__init__()
 
         # Loss
         self.loss_fn = torch.nn.CrossEntropyLoss()
@@ -37,7 +37,7 @@ class ResNet(torch.nn.Module):
         )
 
     def forward(self, inputs, labels):
-        x = self.relu(self.bn(self.conv1(inputs)))
+        x = self.conv1(inputs)
 
         for _ in range(10):
             x = self.res_block(x) + x

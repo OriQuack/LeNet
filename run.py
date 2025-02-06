@@ -16,8 +16,8 @@ def train_one_epoch(net, training_loader, optimizer, epoch_index, tb_writer):
         optimizer.step()
 
         running_loss += loss.item()
-        if i % 1000 == 999:
-            last_loss = running_loss / 1000
+        if i % 10 == 9:
+            last_loss = running_loss / 10
             tb_x = epoch_index * len(training_loader) + i + 1
             if tb_writer is not None:
                 tb_writer.add_scalar("Loss/train", last_loss, tb_x)
