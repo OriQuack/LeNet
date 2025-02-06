@@ -49,7 +49,7 @@ class ResNet(nn.Module):
 
 class ResBlock(nn.Module):
     def __init__(self, channel, first_conv_stride=False):
-        super(ResNet, self).__init__()
+        super(ResBlock, self).__init__()
         self.first_conv_stride = first_conv_stride
 
         if self.first_conv_stride:
