@@ -24,12 +24,17 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
 
     for epoch in range(params.epochs):
         # Train
-        last_loss = train_one_epoch(model, training_loader, optimizer, epoch, writer)
+        last_loss, last_accuracy = train_one_epoch(
+            model, params, training_loader, optimizer, epoch, writer
+        )
 
         # Validate
-        avg_vloss = test_one_epoch(model, validation_loader, optimizer, epoch, writer)
+        avg_vloss, avg_vaccuracy = test_one_epoch(
+            model, params, validation_loader, optimizer, epoch, writer
+        )
 
         print("LOSS train {} valid {}".format(last_loss, avg_vloss))
+        print("ACCURACY train {} valid {}".format(last_accuracy, avg_vaccuracy))
 
         if writer is not None:
             writer.add_scalars(
@@ -37,9 +42,13 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
                 {"Training": last_loss, "Validation": avg_vloss},
                 epoch + 1,
             )
+            writer.add_scalars(
+                "Training vs. Validation Accuracy",
+                {"Training": last_accuracy, "Validation": avg_vaccuracy},
+                epoch + 1,
+            )
 
             writer.flush()
-        # epoch += 1
 
 
 if __name__ == "__main__":
