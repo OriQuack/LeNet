@@ -73,6 +73,7 @@ if __name__ == "__main__":
 
     # Dataset
     parser.add_argument("--dataset", type=str, default="CIFAR10")
+    parser.add_argument("--aug", type=bool, default=False)
 
     # Tensorboard
     parser.add_argument("--tensorboard", type=bool, default=True)
@@ -96,14 +97,14 @@ if __name__ == "__main__":
 
     # Load dataset
     training_loader, validation_loader, img_dim = load_dataset(
-        params.dataset, batch_size=params.batch_size
+        params.dataset, batch_size=params.batch_size, augmentation=params.aug
     )
     params.img_dim = img_dim
 
     # Init tensorboard
     if params.tensorboard:
         writer = SummaryWriter(
-            "runs/{}/{}_b{}_lr{}_wd_{}_{}_{}".format(
+            "runs/{}/{}_b{}_lr{}_wd{}_{}_{:.0f}".format(
                 params.model,
                 params.dataset,
                 params.batch_size,
