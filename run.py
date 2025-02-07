@@ -1,8 +1,11 @@
+import os
 import torch
 from tqdm import tqdm
 
 
 def train_one_epoch(net, params, training_loader, optimizer, epoch_index, tb_writer):
+    device = torch.device(os.environ["TORCH_DEVICE"])
+
     running_loss = 0.0
     last_loss = 0.0
     running_accuracy = 0.0
@@ -15,6 +18,7 @@ def train_one_epoch(net, params, training_loader, optimizer, epoch_index, tb_wri
         total=len(training_loader),
     ):
         inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
 
         optimizer.zero_grad()
 
@@ -40,6 +44,8 @@ def train_one_epoch(net, params, training_loader, optimizer, epoch_index, tb_wri
 
 
 def test_one_epoch(net, params, test_loader, optimizer, epoch_index, tb_writer):
+    device = torch.device(os.environ["TORCH_DEVICE"])
+
     running_loss = 0.0
     running_accuracy = 0.0
 
@@ -50,6 +56,8 @@ def test_one_epoch(net, params, test_loader, optimizer, epoch_index, tb_writer):
             enumerate(test_loader), desc="test", unit="batch", total=len(test_loader)
         ):
             inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
+
             loss, outputs = net(inputs, labels)
             running_loss += loss
             running_accuracy += torch.sum((labels == outputs)) / outputs.shape[0]

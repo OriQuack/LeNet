@@ -1,3 +1,4 @@
+import os
 import argparse
 import time
 import torch
@@ -83,11 +84,15 @@ if __name__ == "__main__":
     params = parser.parse_args()
 
     # Use gpu
-    if params.device == "gpu" and torch.backends.mps.is_available():
-        torch.set_default_device("mps")
+    if params.device == "mps" and torch.backends.mps.is_available():
+        os.environ["TORCH_DEVICE"] = "mps"
         print("Training on MPS...")
+    elif params.device == "gpu" and torch.backends.mps.is_available():
+        os.environ["TORCH_DEVICE"] = "cuda"
+        print("Training on GPU...")
     else:
-        torch.device("cpu")
+        os.environ["TORCH_DEVICE"] = "cpu"
+        print("Training on CPU...")
 
     # Load dataset
     training_loader, validation_loader, img_dim = load_dataset(
