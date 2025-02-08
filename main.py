@@ -65,7 +65,6 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
                 {
                     "epoch": epoch + 1,
                     "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
                     "loss": last_loss,
                 },
                 f"results/{params.file_dir}/params{epoch + 1}",
