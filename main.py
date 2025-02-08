@@ -5,7 +5,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset import load_dataset
-from utils import load_model
+from utils import load_model, try_makedir
 from run import train_one_epoch
 from run import test_one_epoch
 
@@ -23,6 +23,7 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
 
     # Learning rate scheduler 없음
 
+    best_vloss = 1.0e10
     for epoch in range(params.epochs):
         # Train
         last_loss, last_accuracy = train_one_epoch(
@@ -39,6 +40,10 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
             "ACCURACY\ntrain {:.5f} valid {:.5f}\n".format(last_accuracy, avg_vaccuracy)
         )
 
+        try_makedir("results")
+        try_makedir(os.path.join("results", params.file_dir))
+
+        # Output to Tensorboard
         if writer is not None:
             writer.add_scalars(
                 "Training vs. Validation Loss",
@@ -53,6 +58,19 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
 
             writer.flush()
 
+        # Save best model
+        if best_vloss > avg_vloss:
+            best_vloss = avg_vloss
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "loss": last_loss,
+                },
+                f"results/{params.file_dir}/params{epoch + 1}",
+            )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Model description")
@@ -60,13 +78,16 @@ if __name__ == "__main__":
     # Model
     parser.add_argument("--model", type=str, default="LeNet")
 
+    parser.add_argument("--load", type=bool, default=False)
+    parser.add_argument("--load_epoch", type=int, default=30)
+
     # Mode
     # parser.add_argument("--train", type=bool, default=True)
     # parser.add_argument("--test", type=bool, default=False)
 
     # Hyperparameters
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--weight_decay", type=float, default=0.0)
@@ -100,20 +121,18 @@ if __name__ == "__main__":
         params.dataset, batch_size=params.batch_size, augmentation=params.aug
     )
     params.img_dim = img_dim
+    params.file_dir = "{}/{}_b{}_lr{}_wd{}_{}".format(
+        params.model,
+        params.dataset,
+        params.batch_size,
+        params.lr,
+        params.weight_decay,
+        params.save_name,
+    )
 
     # Init tensorboard
     if params.tensorboard:
-        writer = SummaryWriter(
-            "runs/{}/{}_b{}_lr{}_wd{}_{}_{:.0f}".format(
-                params.model,
-                params.dataset,
-                params.batch_size,
-                params.lr,
-                params.weight_decay,
-                params.save_name,
-                time.time(),
-            )
-        )
+        writer = SummaryWriter(f"runs/{params.file_dir}")
     else:
         writer = None
 
