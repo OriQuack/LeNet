@@ -13,15 +13,22 @@ def load_dataset(dataset, batch_size=4, augmentation=False):
                 v2.Pad(4, 0, "constant"),
                 v2.RandomHorizontalFlip(p=0.5),
                 v2.RandomResizedCrop(size=(32, 32)),
-                v2.Normalize((0.5,), (0.5,)),
+                v2.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             ]
         )
     else:
         transform_train = transforms.Compose(
-            [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            ]
         )
+
     transform_test = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ]
     )
 
     if dataset == "FashionMNIST":  # 1x28x28

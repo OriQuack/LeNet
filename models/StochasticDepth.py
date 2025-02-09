@@ -5,8 +5,9 @@ import torch.nn.functional as F
 
 
 class StochasticDepth(nn.Module):
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, prob_L=0.5):
         super(StochasticDepth, self).__init__()
+        self.prob_L = prob_L
 
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
@@ -21,7 +22,7 @@ class StochasticDepth(nn.Module):
         self.max_pool = nn.MaxPool2d(2, 2)
 
         if self.training:
-            self.survivalProb = SurvivalProbability(layers=4, prob_L=0.5)
+            self.survivalProb = SurvivalProbability(layers=4, prob_L=self.prob_L)
         else:
             # In eval mode, survival probability is always 1
             self.survivalProb = SurvivalProbability(layers=4, prob_L=1)
@@ -101,6 +102,7 @@ class ResBlock(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
 
     def forward(self, inputs):
+        residuals = inputs
         if self.first_conv_stride:
             dim_size = inputs.shape[1]
             padded_inputs = F.pad(inputs, (0, 0, 0, 0, 0, dim_size), "constant", 0)

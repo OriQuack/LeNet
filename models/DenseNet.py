@@ -5,10 +5,12 @@ import torch.nn.functional as F
 
 
 class DenseNet(nn.Module):
-    def __init__(self, input_dim, growth_rate):
+    def __init__(self, input_dim, growth_rate=12, dropout=0.2):
         super(DenseNet, self).__init__()
         self.input_dim = input_dim
         self.growth_rate = growth_rate
+        self.dropout = dropout if self.training else 0
+
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
 
@@ -19,21 +21,21 @@ class DenseNet(nn.Module):
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.conv.weight, mode="fan_in", nonlinearity="relu")
 
-        self.bn = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU()
-        self.max_pool = nn.MaxPool2d(2, 2)
-
         # Custom?
-        layers = [4, 8, 6]
-        self.denseBlock1 = DenseBlock(16, layers[0])
-        self.trans1 = TransitionLayer(16 + self.growth_rate * layers[0], 32)
-        self.denseBlock2 = DenseBlock(32, layers[1])
-        self.trans2 = TransitionLayer(32 + self.growth_rate * layers[1], 64)
-        self.denseBlock3 = DenseBlock(64, layers[2])
+        layers = [12, 12, 12]
+        self.denseBlock1 = DenseBlock(16, layers[0], self.growth_rate, self.dropout)
+        self.trans1 = TransitionLayer(
+            16 + self.growth_rate * (layers[0] - 1), 32, self.dropout
+        )
+        self.denseBlock2 = DenseBlock(32, layers[1], self.growth_rate, self.dropout)
+        self.trans2 = TransitionLayer(
+            32 + self.growth_rate * (layers[1] - 1), 64, self.dropout
+        )
+        self.denseBlock3 = DenseBlock(64, layers[2], self.growth_rate, self.dropout)
 
         self.avg_pool = nn.AvgPool2d(8)
 
-        self.fc = nn.Linear(64 + self.growth_rate * layers[2], 10)
+        self.fc = nn.Linear(64 + self.growth_rate * (layers[2] - 1), 10)
         nn.init.kaiming_normal_(self.fc.weight, mode="fan_in", nonlinearity="relu")
 
     def forward(self, inputs, labels):
@@ -56,15 +58,19 @@ class DenseNet(nn.Module):
 
 
 class DenseBlock(nn.Module):
-    def __init__(self, in_channel, layers, k):
+    def __init__(self, in_channel, layers, k, dropout):
         super(DenseBlock, self).__init__()
+        self.device = torch.device(os.environ["TORCH_DEVICE"])
         self.in_channel = in_channel
         self.layers = layers
         self.k = k
+        self.dropout = dropout
 
         self.compfuncs = []
         for layer in range(self.layers - 1):
-            comp = CompositeFunction(in_channel + k * layer, k)
+            comp = CompositeFunction(
+                in_channel + self.k * layer, self.k, self.dropout
+            ).to(self.device)
             self.compfuncs.append(comp)
 
     def forward(self, inputs):
@@ -76,30 +82,34 @@ class DenseBlock(nn.Module):
 
 
 class CompositeFunction(nn.Module):
-    def __init__(self, channel, k):
+    def __init__(self, channel, k, dropout):
         super(CompositeFunction, self).__init__()
         self.channel = channel
         self.k = k
+        self.dropout = dropout
 
         self.bn = nn.BatchNorm2d(self.channel)
         self.relu = nn.ReLU()
         self.conv = nn.Conv2d(self.channel, self.k, 3, padding=1)
+        self.dropout_layer = nn.Dropout2d(self.dropout)
 
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.conv.weight, mode="fan_in", nonlinearity="relu")
 
     def forward(self, inputs):
-        return self.conv(self.relu(self.bn(inputs)))
+        return self.dropout_layer(self.conv(self.relu(self.bn(inputs))))
 
 
 class TransitionLayer(nn.Module):
-    def __init__(self, in_channel, out_channel):
+    def __init__(self, in_channel, out_channel, dropout):
         super(TransitionLayer, self).__init__()
         self.in_channel = in_channel
         self.out_channel = out_channel
+        self.dropout = dropout
 
         self.conv = nn.Conv2d(self.in_channel, self.out_channel, 1)
         self.pool = nn.AvgPool2d(2, 2)
+        self.dropout_layer = nn.Dropout2d(self.dropout)
 
     def forward(self, inputs):
-        return self.pool(self.conv(inputs))
+        return self.pool(self.dropout_layer(self.conv(inputs)))

@@ -2,6 +2,7 @@ import os
 import argparse
 import time
 import torch
+import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset import load_dataset
@@ -14,14 +15,15 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
     model = load_model(params)
 
     # Optimizer
-    optimizer = torch.optim.SGD(
+    optimizer = optim.SGD(
         model.parameters(),
         lr=params.lr,
         momentum=params.momentum,
         weight_decay=params.weight_decay,
     )
 
-    # Learning rate scheduler 없음
+    # Learning rate scheduler
+    # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=0.1)
 
     best_vloss = 1.0e10
     for epoch in range(params.epochs):

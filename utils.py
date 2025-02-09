@@ -3,6 +3,8 @@ import torch
 from models.LeNet import LeNet
 from models.ResNet import ResNet
 from models.PreActResNet import PreActResNet
+from models.StochasticDepth import StochasticDepth
+from models.DenseNet import DenseNet
 
 
 def try_makedir(path):
@@ -22,6 +24,10 @@ def load_model(params):
         model = ResNet(params.img_dim).to(device)
     elif params.model == "PreActResNet":
         model = PreActResNet(params.img_dim).to(device)
+    elif params.model == "StochasticDepth":
+        model = StochasticDepth(params.img_dim).to(device)
+    elif params.model == "DenseNet":
+        model = DenseNet(params.img_dim).to(device)
     else:
         raise Exception("Model not available")
 
