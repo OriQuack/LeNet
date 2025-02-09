@@ -23,7 +23,9 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
     )
 
     # Learning rate scheduler
-    # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=0.1)
+    scheduler = optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[40, 60], gamma=0.1
+    )
 
     best_vloss = 1.0e10
     for epoch in range(params.epochs):
@@ -71,6 +73,8 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
                 },
                 f"results/{params.file_dir}/params{epoch + 1}",
             )
+
+        scheduler.step()
 
 
 if __name__ == "__main__":
