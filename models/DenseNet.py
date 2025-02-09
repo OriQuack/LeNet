@@ -5,7 +5,9 @@ import torch.nn.functional as F
 
 
 class DenseNet(nn.Module):
-    def __init__(self, input_dim, layer_layout=[8, 8, 8], growth_rate=8, dropout=0.2):
+    def __init__(
+        self, input_dim, layer_layout=[12, 12, 12], growth_rate=8, dropout=0.2
+    ):
         super(DenseNet, self).__init__()
         self.input_dim = input_dim
         self.layer_layout = layer_layout
