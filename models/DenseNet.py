@@ -1,4 +1,5 @@
 import os
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,8 +11,6 @@ class DenseNet(nn.Module):
     ):
         super(DenseNet, self).__init__()
         self.input_dim = input_dim
-        self.layer_layout = layer_layout
-        self.growth_rate = growth_rate
         self.dropout = dropout if self.training else 0
 
         # Loss
@@ -24,25 +23,26 @@ class DenseNet(nn.Module):
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.conv.weight, mode="fan_in", nonlinearity="relu")
 
-        self.denseBlock1 = DenseBlock(
-            16, self.layer_layout[0], self.growth_rate, self.dropout
-        )
-        self.trans1 = TransitionLayer(
-            16 + self.growth_rate * (self.layer_layout[0] - 1), 32, self.dropout
-        )
+        self.denseBlock1 = DenseBlock(16, layer_layout[0], growth_rate, self.dropout)
+        block1_out_chan = 16 + growth_rate * (layer_layout[0] - 1)
+
+        self.trans1 = TransitionLayer(block1_out_chan, 1, self.dropout)
+
         self.denseBlock2 = DenseBlock(
-            32, self.layer_layout[1], self.growth_rate, self.dropout
+            block1_out_chan, layer_layout[1], growth_rate, self.dropout
         )
-        self.trans2 = TransitionLayer(
-            32 + self.growth_rate * (self.layer_layout[1] - 1), 64, self.dropout
-        )
+        block2_out_chan = block1_out_chan + growth_rate * (layer_layout[1] - 1)
+
+        self.trans2 = TransitionLayer(block2_out_chan, 1, self.dropout)
+
         self.denseBlock3 = DenseBlock(
-            64, self.layer_layout[2], self.growth_rate, self.dropout
+            block2_out_chan, layer_layout[2], growth_rate, self.dropout
         )
+        block3_out_chan = block2_out_chan + growth_rate * (layer_layout[2] - 1)
 
         self.avg_pool = nn.AvgPool2d(8)
 
-        self.fc = nn.Linear(64 + self.growth_rate * (self.layer_layout[2] - 1), 10)
+        self.fc = nn.Linear(block3_out_chan, 10)
         nn.init.kaiming_normal_(self.fc.weight, mode="fan_in", nonlinearity="relu")
 
     def forward(self, inputs, labels):
@@ -108,14 +108,14 @@ class CompositeFunction(nn.Module):
 
 
 class TransitionLayer(nn.Module):
-    def __init__(self, in_channel, out_channel, dropout):
+    def __init__(self, in_channel, theta, dropout):
         super(TransitionLayer, self).__init__()
-        self.in_channel = in_channel
-        self.out_channel = out_channel
+        self.theta = theta
         self.dropout = dropout
 
-        self.bn = nn.BatchNorm2d(self.in_channel)
-        self.conv = nn.Conv2d(self.in_channel, self.out_channel, 1)
+        out_channel = math.floor(in_channel * theta)
+        self.bn = nn.BatchNorm2d(in_channel)
+        self.conv = nn.Conv2d(in_channel, out_channel, 1)
         self.pool = nn.AvgPool2d(2, 2)
         self.dropout_layer = nn.Dropout2d(self.dropout)
 
