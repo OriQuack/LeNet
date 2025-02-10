@@ -74,6 +74,9 @@ class StochasticDepth(nn.Module):
         _, outputs = torch.max(outputs, dim=1)
 
         return loss, outputs
+    
+    def survival_prob(self, layer, prob_L=0.5):
+        return 1 - layer / self.layers * (1 - prob_L)
 
 
 class ResBlock(nn.Module):

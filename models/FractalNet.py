@@ -11,14 +11,19 @@ class FractalNet(nn.Module):
         channel_layout=[64, 128, 256, 512, 512],
         columns=3,
         loc_drop=0.15,
-        dropout=True,
+        drop_path=True,
     ):
         super(FractalNet, self).__init__()
-        self.ch_layout = channel_layout
-        self.columns = columns
-        self.loc_drop = 0
-        self.dropout = dropout
+        self.drop_path = drop_path
+        self.num_blocks = len(channel_layout)
         self.selected_col = -1
+        loc_drop = 0
+
+        # If drop_path is true, 50% local 50% global
+        if self.training and self.drop_path:
+            if random.random() > 0.5:
+                self.selected_col = random.choice(range(columns)) + 1
+            loc_drop = loc_drop
 
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
@@ -26,7 +31,7 @@ class FractalNet(nn.Module):
         # Net
         input_channel = input_dim[1]
         input_size = input_dim[2]
-        self.conv = nn.Conv2d(input_channel, self.ch_layout[0], 3, padding=1)
+        self.conv = nn.Conv2d(input_channel, channel_layout[0], 3, padding=1)
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.conv.weight, mode="fan_in", nonlinearity="relu")
 
@@ -34,52 +39,22 @@ class FractalNet(nn.Module):
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(2, 2)
 
-        # If dropout is true, 50% local 50% global
-        if self.training and self.dropout:
-            if random.random() > 0.5:
-                self.selected_col = random.choice(range(columns)) + 1
-            self.loc_drop = loc_drop
+        in_channel = channel_layout[0]
+        self.fractalBlocks = nn.ModuleList()
+        self.drop_layers = nn.ModuleList()
+        for i, channel in enumerate(channel_layout):
+            fractalBlock = FractalBlock(
+                in_channel,
+                channel,
+                columns,
+                loc_drop,
+                self.selected_col,
+            )
+            self.fractalBlocks.append(fractalBlock)
+            in_channel = channel
 
-        self.drop1 = nn.Dropout2d(0.1)
-        self.drop2 = nn.Dropout2d(0.2)
-        self.drop3 = nn.Dropout2d(0.3)
-        self.drop4 = nn.Dropout2d(0.4)
-
-        self.fracBlock1 = FractalBlock(
-            self.ch_layout[0],
-            self.ch_layout[0],
-            self.columns,
-            self.loc_drop,
-            self.selected_col,
-        )
-        self.fracBlock2 = FractalBlock(
-            self.ch_layout[0],
-            self.ch_layout[1],
-            self.columns,
-            self.loc_drop,
-            self.selected_col,
-        )
-        self.fracBlock3 = FractalBlock(
-            self.ch_layout[1],
-            self.ch_layout[2],
-            self.columns,
-            self.loc_drop,
-            self.selected_col,
-        )
-        self.fracBlock4 = FractalBlock(
-            self.ch_layout[2],
-            self.ch_layout[3],
-            self.columns,
-            self.loc_drop,
-            self.selected_col,
-        )
-        self.fracBlock5 = FractalBlock(
-            self.ch_layout[3],
-            self.ch_layout[4],
-            self.columns,
-            self.loc_drop,
-            self.selected_col,
-        )
+            drop_layer = nn.Dropout2d(0.1 * i)
+            self.drop_layers.append(drop_layer)
 
         self.fc = nn.Linear(512, 10)
         # Kaiming Initialization
@@ -88,24 +63,10 @@ class FractalNet(nn.Module):
     def forward(self, inputs, labels):
         x = self.relu(self.bn(self.conv(inputs)))
 
-        x = self.fracBlock1(x)
-        x = self.max_pool(x)
-
-        x = self.fracBlock2(x)
-        x = self.max_pool(x)
-        x = self.drop1(x) if self.training and self.dropout else x
-
-        x = self.fracBlock3(x)
-        x = self.max_pool(x)
-        x = self.drop2(x) if self.training and self.dropout else x
-
-        x = self.fracBlock4(x)
-        x = self.max_pool(x)
-        x = self.drop3(x) if self.training and self.dropout else x
-
-        x = self.fracBlock5(x)
-        x = self.max_pool(x)
-        x = self.drop4(x) if self.training and self.dropout else x
+        for block in range(self.num_blocks):
+            x = self.fractalBlocks[block](x)
+            x = self.max_pool(x)
+            x = self.drop_layers[block](x) if self.training and self.drop_path else x
 
         x = torch.squeeze(x)
         outputs = self.fc(x)

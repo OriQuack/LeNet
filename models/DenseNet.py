@@ -7,11 +7,22 @@ import torch.nn.functional as F
 
 class DenseNet(nn.Module):
     def __init__(
-        self, input_dim, layer_layout=[12, 12, 12], growth_rate=8, dropout=0.2
+        self,
+        input_dim,
+        layer_layout=[12, 12, 12],
+        growth_rate=8,
+        dropout=0.2,
+        theta=0.5,
+        bottleneck=True,
     ):
         super(DenseNet, self).__init__()
         self.input_dim = input_dim
-        self.dropout = dropout if self.training else 0
+        self.layer_layout = layer_layout
+        self.num_blocks = len(layer_layout)
+
+        # Theta only active for bottleneck
+        theta = theta if bottleneck else 1
+        dropout = dropout if self.training else 0
 
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
@@ -19,39 +30,41 @@ class DenseNet(nn.Module):
         # Net
         input_channel = self.input_dim[1]
         input_size = self.input_dim[2]
-        self.conv = nn.Conv2d(input_channel, 16, 3, padding=1)
+        self.conv = nn.Conv2d(input_channel, 2 * growth_rate, 3, padding=1)
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.conv.weight, mode="fan_in", nonlinearity="relu")
 
-        self.denseBlock1 = DenseBlock(16, layer_layout[0], growth_rate, self.dropout)
-        block1_out_chan = 16 + growth_rate * (layer_layout[0] - 1)
+        # Define DenseBlocks
+        block_chan = 2 * growth_rate
+        self.denseBlocks = nn.ModuleList()
+        self.trans_layers = nn.ModuleList()
+        for i, layers in enumerate(layer_layout):
+            denseBlock = DenseBlock(
+                block_chan, layers, growth_rate, dropout, bottleneck
+            )
+            self.denseBlocks.append(denseBlock)
+            block_chan = block_chan + growth_rate * (layers - 1)
 
-        self.trans1 = TransitionLayer(block1_out_chan, 1, self.dropout)
+            # Transition layer only between desnse blocks
+            if i == self.num_blocks - 1:
+                break
+            trans = TransitionLayer(block_chan, theta, dropout)
+            self.trans_layers.append(trans)
+            block_chan = math.floor(block_chan * theta)
 
-        self.denseBlock2 = DenseBlock(
-            block1_out_chan, layer_layout[1], growth_rate, self.dropout
-        )
-        block2_out_chan = block1_out_chan + growth_rate * (layer_layout[1] - 1)
+        self.avg_pool = nn.AvgPool2d(input_size // (2 ** (self.num_blocks - 1)))
 
-        self.trans2 = TransitionLayer(block2_out_chan, 1, self.dropout)
-
-        self.denseBlock3 = DenseBlock(
-            block2_out_chan, layer_layout[2], growth_rate, self.dropout
-        )
-        block3_out_chan = block2_out_chan + growth_rate * (layer_layout[2] - 1)
-
-        self.avg_pool = nn.AvgPool2d(8)
-
-        self.fc = nn.Linear(block3_out_chan, 10)
+        self.fc = nn.Linear(block_chan, 10)
         nn.init.kaiming_normal_(self.fc.weight, mode="fan_in", nonlinearity="relu")
 
     def forward(self, inputs, labels):
         x = self.conv(inputs)
-        x = self.denseBlock1(x)
-        x = self.trans1(x)
-        x = self.denseBlock2(x)
-        x = self.trans2(x)
-        x = self.denseBlock3(x)
+
+        for i in range(self.num_blocks):
+            x = self.denseBlocks[i](x)
+            if i == self.num_blocks - 1:
+                break
+            x = self.trans_layers[i](x)
 
         x = self.avg_pool(x)
 
@@ -65,19 +78,14 @@ class DenseNet(nn.Module):
 
 
 class DenseBlock(nn.Module):
-    def __init__(self, in_channel, layers, k, dropout):
+    def __init__(self, in_channel, layers, k, dropout, bottleneck):
         super(DenseBlock, self).__init__()
-        self.device = torch.device(os.environ["TORCH_DEVICE"])
         self.in_channel = in_channel
         self.layers = layers
-        self.k = k
-        self.dropout = dropout
 
-        self.compfuncs = []
-        for layer in range(self.layers - 1):
-            comp = CompositeFunction(
-                in_channel + self.k * layer, self.k, self.dropout
-            ).to(self.device)
+        self.compfuncs = nn.ModuleList()
+        for layer in range(layers - 1):
+            comp = CompositeFunction(in_channel + k * layer, k, dropout, bottleneck)
             self.compfuncs.append(comp)
 
     def forward(self, inputs):
@@ -89,21 +97,29 @@ class DenseBlock(nn.Module):
 
 
 class CompositeFunction(nn.Module):
-    def __init__(self, channel, k, dropout):
+    def __init__(self, channel, k, dropout, bottleneck=False):
         super(CompositeFunction, self).__init__()
-        self.channel = channel
-        self.k = k
-        self.dropout = dropout
+        self.bottleneck = bottleneck
 
-        self.bn = nn.BatchNorm2d(self.channel)
         self.relu = nn.ReLU()
-        self.conv = nn.Conv2d(self.channel, self.k, 3, padding=1)
-        self.dropout_layer = nn.Dropout2d(self.dropout)
+        if bottleneck:
+            self.conv_bottleneck = nn.Conv2d(channel, k * 4, 1)
+            nn.init.kaiming_normal_(
+                self.conv_bottleneck.weight, mode="fan_in", nonlinearity="relu"
+            )
+            self.bn_bottleneck = nn.BatchNorm2d(channel)
+            channel = k * 4
 
-        # Kaiming Initialization
+        self.bn = nn.BatchNorm2d(channel)
+        self.conv = nn.Conv2d(channel, k, 3, padding=1)
+        self.dropout_layer = nn.Dropout2d(dropout)
         nn.init.kaiming_normal_(self.conv.weight, mode="fan_in", nonlinearity="relu")
 
     def forward(self, inputs):
+        if self.bottleneck:
+            inputs = self.dropout_layer(
+                self.conv_bottleneck(self.relu(self.bn_bottleneck(inputs)))
+            )
         return self.dropout_layer(self.conv(self.relu(self.bn(inputs))))
 
 

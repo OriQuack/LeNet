@@ -38,6 +38,7 @@ def load_dataset(dataset, batch_size=4, augmentation=False):
         validation_set = torchvision.datasets.FashionMNIST(
             "./data", train=False, transform=transform_test, download=True
         )
+        img_dim = list([batch_size, 1, 28, 28])
     elif dataset == "SVHN":  # 3x32x32
         training_set = torchvision.datasets.SVHN(
             "./data", split="train", transform=transform_train, download=True
@@ -45,6 +46,7 @@ def load_dataset(dataset, batch_size=4, augmentation=False):
         validation_set = torchvision.datasets.SVHN(
             "./data", split="train", transform=transform_test, download=True
         )
+        img_dim = list([batch_size, 3, 32, 32])
     elif dataset == "CIFAR10":  # 3x32x32
         training_set = torchvision.datasets.CIFAR10(
             "./data", train=True, transform=transform_train, download=True
@@ -52,6 +54,7 @@ def load_dataset(dataset, batch_size=4, augmentation=False):
         validation_set = torchvision.datasets.CIFAR10(
             "./data", train=False, transform=transform_test, download=True
         )
+        img_dim = list([batch_size, 3, 32, 32])
     else:
         raise Exception("Dataset not available")
 
@@ -61,10 +64,5 @@ def load_dataset(dataset, batch_size=4, augmentation=False):
     validation_loader = torch.utils.data.DataLoader(
         validation_set, batch_size=batch_size, shuffle=False
     )
-
-    # Get image dimensions
-    dataiter = iter(training_loader)
-    images, _ = next(dataiter)
-    img_dim = list(images.size())
 
     return training_loader, validation_loader, img_dim
