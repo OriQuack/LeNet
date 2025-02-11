@@ -14,6 +14,7 @@ class FractalNet(nn.Module):
         drop_path=True,
     ):
         super(FractalNet, self).__init__()
+        self.columns = columns
         self.drop_path = drop_path
         self.num_blocks = len(layers_layout)
 
@@ -51,8 +52,14 @@ class FractalNet(nn.Module):
     def forward(self, inputs, labels):
         x = self.relu(self.bn(self.conv(inputs)))
 
+        # 50% global sampling if training and drop_path
+        selected_col = -1
+        if self.training and self.drop_path:
+            if random.random() > 0.5:
+                selected_col = random.choice(range(self.columns)) + 1
+
         for i in range(self.num_blocks):
-            x = self.fractalBlocks[i](x)
+            x = self.fractalBlocks[i](x, selected_col)
             x = self.max_pool(x)
             x = self.drop_layers[i](x) if self.training and self.drop_path else x
 
@@ -89,39 +96,38 @@ class FractalBlock(nn.Module):
             comp = nn.Sequential(conv, bn, relu)
             self.convs.append(comp)
 
-    def forward(self, inputs):
-        is_local = True
-        if self.training and self.drop_path:
-            if random.random() > 0.5:
-                selected_col = random.choice(range(self.columns)) + 1
-                is_local = False
-
+    def forward(self, inputs, selected_col):
         # Local
-        if is_local:
-            x = self.traverse_block(1, inputs, 0)
+        if selected_col == -1:
+            idxs = [0] * 4
+            x = self.traverse_block(1, inputs, idxs)
             outputs = torch.mean(x, dim=2)
         # Global
         else:
             outputs = self.traverse_block_global(inputs, selected_col)
         return outputs
 
-    def traverse_block(self, col, inputs, idx):
+    def traverse_block(self, col, inputs, idxs):
         if col == self.columns:
-            x = self.convs[2 ** (col - 1) - 1 + idx](inputs)
+            x = self.convs[2 ** (col - 1) - 1 + idxs[col - 1]](inputs)
+            idxs[col - 1] += 1
             return torch.unsqueeze(x, 2)
 
-        x = self.convs[2 ** (col - 1) - 1 + idx](inputs)
+        x = self.convs[2 ** (col - 1) - 1 + idxs[col - 1]](inputs)
+        idxs[col - 1] += 1
         x = torch.unsqueeze(x, 2)
 
-        y = torch.mean(self.traverse_block(col + 1, inputs, idx), dim=2)
-        idx += 1
-        y = self.traverse_block(col + 1, y, idx)
+        y = torch.mean(self.traverse_block(col + 1, inputs, idxs), dim=2)
+        y = self.traverse_block(col + 1, y, idxs)
 
         outputs = torch.concat((x, y), dim=2)
         outputs = self.drop_input(outputs)
         return outputs
 
     def drop_input(self, inputs):
+        if not self.training or not self.drop_path:
+            return inputs
+
         paths = list(range(inputs.shape[2]))
         random.shuffle(paths)
 
@@ -130,7 +136,7 @@ class FractalBlock(nn.Module):
             if inputs.shape[2] == 1:
                 break
 
-            if self.training and self.drop_path and random.random() < self.loc_drop:
+            if random.random() < self.loc_drop:
                 inputs = torch.cat(
                     (inputs[:, :, :path, :, :], inputs[:, :, path + 1 :, :, :]), dim=2
                 )

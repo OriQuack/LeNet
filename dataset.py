@@ -1,19 +1,16 @@
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from torchvision.transforms import v2
 
 
 def load_dataset(dataset, batch_size=4, augmentation=False):
     if augmentation:
-        transform_train = v2.Compose(
+        transform_train = transforms.Compose(
             [
-                v2.ToImage(),
-                v2.ToDtype(torch.float32, scale=True),
-                v2.Pad(4, 0, "constant"),
-                v2.RandomHorizontalFlip(p=0.5),
-                v2.RandomResizedCrop(size=(32, 32)),
-                v2.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+                transforms.ToTensor(),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomResizedCrop(size=(32, 32)),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             ]
         )
     else:
