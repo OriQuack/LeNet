@@ -8,7 +8,6 @@ class StochasticDepth(nn.Module):
     def __init__(self, input_dim, layers_layout=[64, 128, 256, 512], prob_L=0.5):
         super(StochasticDepth, self).__init__()
         self.num_blocks = len(layers_layout)
-        self.prob_L = prob_L if self.training else 1
 
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
@@ -22,13 +21,13 @@ class StochasticDepth(nn.Module):
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(2, 2)
 
+        # Build ResBlocks
         self.resBlocks = nn.ModuleList()
         for layer, channel in enumerate(layers_layout):
             resBlock = ResBlock(
                 channel,
-                self.survival_prob(self.num_blocks, layer, self.prob_L),
+                self.survival_prob(self.num_blocks, layer, prob_L),
                 first_conv_stride=(layer != 0),
-                training=self.training,
             )
             self.resBlocks.append(resBlock)
 
@@ -58,14 +57,15 @@ class StochasticDepth(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, channel, surv_prob, first_conv_stride=False, training=True):
+    def __init__(self, channel, surv_prob, first_conv_stride=False):
         super(ResBlock, self).__init__()
-        self.training = training
         self.surv_prob = surv_prob
         self.first_conv_stride = first_conv_stride
 
-        # Drop with drop probability
-        self.drop = True if random.random() > self.surv_prob else False
+        # Drop with drop probability during training
+        self.drop = (
+            True if random.random() > self.surv_prob and self.training else False
+        )
 
         if self.first_conv_stride:
             self.conv1 = nn.Conv2d(channel // 2, channel, 3, padding=1, stride=2)
