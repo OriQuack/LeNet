@@ -8,22 +8,14 @@ class FractalNet(nn.Module):
     def __init__(
         self,
         input_dim,
-        channel_layout=[64, 128, 256, 512, 512],
-        columns=3,
+        layers_layout=[64, 128, 256, 512, 512],
+        columns=4,
         loc_drop=0.15,
         drop_path=True,
     ):
         super(FractalNet, self).__init__()
         self.drop_path = drop_path
-        self.num_blocks = len(channel_layout)
-        self.selected_col = -1
-        loc_drop = 0
-
-        # If drop_path is true, 50% local 50% global
-        if self.training and self.drop_path:
-            if random.random() > 0.5:
-                self.selected_col = random.choice(range(columns)) + 1
-            loc_drop = loc_drop
+        self.num_blocks = len(layers_layout)
 
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
@@ -31,24 +23,21 @@ class FractalNet(nn.Module):
         # Net
         input_channel = input_dim[1]
         input_size = input_dim[2]
-        self.conv = nn.Conv2d(input_channel, channel_layout[0], 3, padding=1)
+        self.conv = nn.Conv2d(input_channel, layers_layout[0], 3, padding=1)
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.conv.weight, mode="fan_in", nonlinearity="relu")
 
-        self.bn = nn.BatchNorm2d(64)
+        self.bn = nn.BatchNorm2d(layers_layout[0])
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(2, 2)
 
-        in_channel = channel_layout[0]
+        # Define Fractal Blocks
+        in_channel = layers_layout[0]
         self.fractalBlocks = nn.ModuleList()
         self.drop_layers = nn.ModuleList()
-        for i, channel in enumerate(channel_layout):
+        for i, channel in enumerate(layers_layout):
             fractalBlock = FractalBlock(
-                in_channel,
-                channel,
-                columns,
-                loc_drop,
-                self.selected_col,
+                in_channel, channel, columns, loc_drop, self.drop_path
             )
             self.fractalBlocks.append(fractalBlock)
             in_channel = channel
@@ -56,17 +45,16 @@ class FractalNet(nn.Module):
             drop_layer = nn.Dropout2d(0.1 * i)
             self.drop_layers.append(drop_layer)
 
-        self.fc = nn.Linear(512, 10)
-        # Kaiming Initialization
+        self.fc = nn.Linear(layers_layout[self.num_blocks - 1], 10)
         nn.init.kaiming_normal_(self.fc.weight, mode="fan_in", nonlinearity="relu")
 
     def forward(self, inputs, labels):
         x = self.relu(self.bn(self.conv(inputs)))
 
-        for block in range(self.num_blocks):
-            x = self.fractalBlocks[block](x)
+        for i in range(self.num_blocks):
+            x = self.fractalBlocks[i](x)
             x = self.max_pool(x)
-            x = self.drop_layers[block](x) if self.training and self.drop_path else x
+            x = self.drop_layers[i](x) if self.training and self.drop_path else x
 
         x = torch.squeeze(x)
         outputs = self.fc(x)
@@ -78,50 +66,56 @@ class FractalNet(nn.Module):
 
 
 class FractalBlock(nn.Module):
-    def __init__(self, in_chan, out_chan, columns, loc_drop, selected_col=-1):
+    def __init__(self, in_chan, out_chan, columns, loc_drop, drop_path):
         super(FractalBlock, self).__init__()
         self.in_chan = in_chan
         self.out_chan = out_chan
         self.columns = columns
         self.loc_drop = loc_drop
-        self.selected_col = selected_col
+        self.drop_path = drop_path
 
-        self.conv1 = nn.Conv2d(self.in_chan, self.out_chan, 3, padding=1)
-        self.conv2 = nn.Conv2d(self.out_chan, self.out_chan, 3, padding=1)
-        # Kaiming Initialization
-        nn.init.kaiming_normal_(self.conv1.weight, mode="fan_in", nonlinearity="relu")
-        nn.init.kaiming_normal_(self.conv2.weight, mode="fan_in", nonlinearity="relu")
-
-        self.bn = nn.BatchNorm2d(self.out_chan)
-        self.relu = nn.ReLU()
+        self.convs = nn.ModuleList()
+        first = 0
+        for i in range(2**columns - 1):
+            if i == first:
+                # First conv of each column
+                conv = nn.Conv2d(self.in_chan, self.out_chan, 3, padding=1)
+                first = (first + 1) * 2 - 1
+            else:
+                conv = nn.Conv2d(self.out_chan, self.out_chan, 3, padding=1)
+            nn.init.kaiming_normal_(conv.weight, mode="fan_in", nonlinearity="relu")
+            bn = nn.BatchNorm2d(self.out_chan)
+            relu = nn.ReLU()
+            comp = nn.Sequential(conv, bn, relu)
+            self.convs.append(comp)
 
     def forward(self, inputs):
+        is_local = True
+        if self.training and self.drop_path:
+            if random.random() > 0.5:
+                selected_col = random.choice(range(self.columns)) + 1
+                is_local = False
+
         # Local
-        if self.selected_col == -1:
-            x = self.build_block(1, inputs, True)
+        if is_local:
+            x = self.traverse_block(1, inputs, 0)
             outputs = torch.mean(x, dim=2)
         # Global
         else:
-            outputs = self.build_block_global(inputs)
+            outputs = self.traverse_block_global(inputs, selected_col)
         return outputs
 
-    def build_block(self, col, inputs, first):
+    def traverse_block(self, col, inputs, idx):
         if col == self.columns:
-            if first:
-                x = self.relu(self.bn(self.conv1(inputs)))
-            else:
-                x = self.relu(self.bn(self.conv2(inputs)))
+            x = self.convs[2 ** (col - 1) - 1 + idx](inputs)
             return torch.unsqueeze(x, 2)
 
-        if first:
-            x = self.relu(self.bn(self.conv1(inputs)))
-        else:
-            x = self.relu(self.bn(self.conv2(inputs)))
+        x = self.convs[2 ** (col - 1) - 1 + idx](inputs)
         x = torch.unsqueeze(x, 2)
 
-        y = torch.mean(self.build_block(col + 1, inputs, first), dim=2)
-        first = False
-        y = self.build_block(col + 1, y, first)
+        y = torch.mean(self.traverse_block(col + 1, inputs, idx), dim=2)
+        idx += 1
+        y = self.traverse_block(col + 1, y, idx)
 
         outputs = torch.concat((x, y), dim=2)
         outputs = self.drop_input(outputs)
@@ -136,18 +130,17 @@ class FractalBlock(nn.Module):
             if inputs.shape[2] == 1:
                 break
 
-            if random.random() < self.loc_drop:
+            if self.training and self.drop_path and random.random() < self.loc_drop:
                 inputs = torch.cat(
                     (inputs[:, :, :path, :, :], inputs[:, :, path + 1 :, :, :]), dim=2
                 )
 
         return inputs
 
-    def build_block_global(self, inputs):
-        num_convs = 2 ** (self.selected_col - 1)
-        x = self.relu(self.bn(self.conv1(inputs)))
+    def traverse_block_global(self, inputs, selected_col):
+        num_convs = 2 ** (selected_col - 1)
 
-        for _ in range(num_convs - 1):
-            x = self.relu(self.bn(self.conv2(x)))
+        for i in range(num_convs):
+            inputs = self.convs[2 ** (selected_col - 1) - 1 + i](inputs)
 
-        return x
+        return inputs

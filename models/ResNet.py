@@ -67,13 +67,14 @@ class ResBlock(nn.Module):
         nn.init.kaiming_normal_(self.conv1.weight, mode="fan_in", nonlinearity="relu")
         nn.init.kaiming_normal_(self.conv2.weight, mode="fan_in", nonlinearity="relu")
 
-        self.bn = nn.BatchNorm2d(channel)
+        self.bn1 = nn.BatchNorm2d(channel)
+        self.bn2 = nn.BatchNorm2d(channel)
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2, 2)
 
     def forward(self, inputs):
-        x = self.relu(self.bn(self.conv1(inputs)))
-        x = self.bn(self.conv2(x))
+        x = self.relu(self.bn1(self.conv1(inputs)))
+        x = self.bn2(self.conv2(x))
         if self.first_conv_stride:
             dim_size = inputs.shape[1]
             inputs = F.pad(inputs, (0, 0, 0, 0, 0, dim_size), "constant", 0)

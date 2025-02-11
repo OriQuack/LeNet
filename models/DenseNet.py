@@ -1,4 +1,3 @@
-import os
 import math
 import torch
 import torch.nn as nn
@@ -9,7 +8,7 @@ class DenseNet(nn.Module):
     def __init__(
         self,
         input_dim,
-        layer_layout=[12, 12, 12],
+        layers_layout=[12, 12, 12],
         growth_rate=8,
         dropout=0.2,
         theta=0.5,
@@ -17,8 +16,7 @@ class DenseNet(nn.Module):
     ):
         super(DenseNet, self).__init__()
         self.input_dim = input_dim
-        self.layer_layout = layer_layout
-        self.num_blocks = len(layer_layout)
+        self.num_blocks = len(layers_layout)
 
         # Theta only active for bottleneck
         theta = theta if bottleneck else 1
@@ -38,7 +36,7 @@ class DenseNet(nn.Module):
         block_chan = 2 * growth_rate
         self.denseBlocks = nn.ModuleList()
         self.trans_layers = nn.ModuleList()
-        for i, layers in enumerate(layer_layout):
+        for i, layers in enumerate(layers_layout):
             denseBlock = DenseBlock(
                 block_chan, layers, growth_rate, dropout, bottleneck
             )
@@ -80,8 +78,6 @@ class DenseNet(nn.Module):
 class DenseBlock(nn.Module):
     def __init__(self, in_channel, layers, k, dropout, bottleneck):
         super(DenseBlock, self).__init__()
-        self.in_channel = in_channel
-        self.layers = layers
 
         self.compfuncs = nn.ModuleList()
         for layer in range(layers - 1):
@@ -89,8 +85,8 @@ class DenseBlock(nn.Module):
             self.compfuncs.append(comp)
 
     def forward(self, inputs):
-        for layer in range(self.layers - 1):
-            x = self.compfuncs[layer](inputs)
+        for compfunc in self.compfuncs:
+            x = compfunc(inputs)
             inputs = torch.cat((inputs, x), 1)
 
         return inputs
