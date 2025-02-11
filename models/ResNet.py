@@ -4,8 +4,9 @@ import torch.nn.functional as F
 
 
 class ResNet(nn.Module):
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, layers_layout=[64, 128, 256, 512]):
         super(ResNet, self).__init__()
+        num_blocks = len(layers_layout)
 
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
@@ -13,30 +14,32 @@ class ResNet(nn.Module):
         # Net
         input_channel = input_dim[1]
         input_size = input_dim[2]
-        self.conv1 = nn.Conv2d(input_channel, 64, 3, padding=1)
+        self.conv1 = nn.Conv2d(input_channel, layers_layout[0], 3, padding=1)
 
-        self.bn = nn.BatchNorm2d(64)
+        self.bn = nn.BatchNorm2d(layers_layout[0])
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(2, 2)
 
-        self.resBlock1 = ResBlock(64)
-        self.resBlock2 = ResBlock(128, first_conv_stride=True)
-        self.resBlock3 = ResBlock(256, first_conv_stride=True)
-        self.resBlock4 = ResBlock(512, first_conv_stride=True)
+        # Build ResBlocks
+        self.resBlocks = nn.ModuleList()
+        for layer, channel in enumerate(layers_layout):
+            resBlock = ResBlock(
+                channel,
+                first_conv_stride=(layer != 0),
+            )
+            self.resBlocks.append(resBlock)
 
-        self.avg_pool = nn.AvgPool2d(4)
+        self.avg_pool = nn.AvgPool2d(input_size // 2 ** (num_blocks - 1))
 
-        self.fc = nn.Linear(512, 10)
+        self.fc = nn.Linear(layers_layout[num_blocks - 1], 10)
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.fc.weight, mode="fan_in", nonlinearity="relu")
 
     def forward(self, inputs, labels):
         x = self.relu(self.bn(self.conv1(inputs)))
 
-        x = self.resBlock1(x)
-        x = self.resBlock2(x)
-        x = self.resBlock3(x)
-        x = self.resBlock4(x)
+        for resBlock in self.resBlocks:
+            x = resBlock(x)
 
         x = self.avg_pool(x)
         x = torch.squeeze(x)
@@ -59,7 +62,7 @@ class ResBlock(nn.Module):
             self.conv1 = nn.Conv2d(channel, channel, 3, padding=1)
 
         self.conv2 = nn.Conv2d(channel, channel, 3, padding=1)
-        
+
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.conv1.weight, mode="fan_in", nonlinearity="relu")
         nn.init.kaiming_normal_(self.conv2.weight, mode="fan_in", nonlinearity="relu")
