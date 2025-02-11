@@ -5,9 +5,10 @@ import torch.nn.functional as F
 
 
 class StochasticDepth(nn.Module):
-    def __init__(self, input_dim, prob_L=0.5):
+    def __init__(self, input_dim, layers_layout=[64, 128, 256, 512], prob_L=0.5):
         super(StochasticDepth, self).__init__()
-        self.prob_L = prob_L
+        self.num_blocks = len(layers_layout)
+        self.prob_L = prob_L if self.training else 1
 
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
@@ -15,56 +16,33 @@ class StochasticDepth(nn.Module):
         # Net
         input_channel = input_dim[1]
         input_size = input_dim[2]
-        self.conv1 = nn.Conv2d(input_channel, 64, 3, padding=1)
+        self.conv1 = nn.Conv2d(input_channel, layers_layout[0], 3, padding=1)
 
-        self.bn = nn.BatchNorm2d(64)
+        self.bn = nn.BatchNorm2d(layers_layout[0])
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(2, 2)
 
-        if self.training:
-            self.survivalProb = SurvivalProbability(layers=4, prob_L=self.prob_L)
-        else:
-            # In eval mode, survival probability is always 1
-            self.survivalProb = SurvivalProbability(layers=4, prob_L=1)
+        self.resBlocks = nn.ModuleList()
+        for layer, channel in enumerate(layers_layout):
+            resBlock = ResBlock(
+                channel,
+                self.survival_prob(self.num_blocks, layer, self.prob_L),
+                first_conv_stride=(layer != 0),
+                training=self.training,
+            )
+            self.resBlocks.append(resBlock)
 
-        self.resBlock1 = ResBlock(
-            64,
-            surv_prob=self.survivalProb(0),
-            first_conv_stride=False,
-            training=self.training,
-        )
-        self.resBlock2 = ResBlock(
-            128,
-            surv_prob=self.survivalProb(1),
-            first_conv_stride=True,
-            training=self.training,
-        )
-        self.resBlock3 = ResBlock(
-            256,
-            surv_prob=self.survivalProb(2),
-            first_conv_stride=True,
-            training=self.training,
-        )
-        self.resBlock4 = ResBlock(
-            512,
-            surv_prob=self.survivalProb(3),
-            first_conv_stride=True,
-            training=self.training,
-        )
+        self.avg_pool = nn.AvgPool2d(input_size // 2 ** (self.num_blocks - 1))
 
-        self.avg_pool = nn.AvgPool2d(4)
-
-        self.fc = nn.Linear(512, 10)
+        self.fc = nn.Linear(layers_layout[self.num_blocks - 1], 10)
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.fc.weight, mode="fan_in", nonlinearity="relu")
 
     def forward(self, inputs, labels):
         x = self.relu(self.bn(self.conv1(inputs)))
 
-        x = self.resBlock1(x)
-        x = self.resBlock2(x)
-        x = self.resBlock3(x)
-        x = self.resBlock4(x)
+        for resBlock in self.resBlocks:
+            x = resBlock(x)
 
         x = self.avg_pool(x)
         x = torch.squeeze(x)
@@ -74,9 +52,9 @@ class StochasticDepth(nn.Module):
         _, outputs = torch.max(outputs, dim=1)
 
         return loss, outputs
-    
-    def survival_prob(self, layer, prob_L=0.5):
-        return 1 - layer / self.layers * (1 - prob_L)
+
+    def survival_prob(self, num_layers, layer, prob_L=0.5):
+        return 1 - layer / num_layers * (1 - prob_L)
 
 
 class ResBlock(nn.Module):
@@ -126,13 +104,3 @@ class ResBlock(nn.Module):
         outputs = self.relu(x + residuals)
 
         return outputs
-
-
-class SurvivalProbability(nn.Module):
-    def __init__(self, layers, prob_L=0.5):
-        super(SurvivalProbability, self).__init__()
-        self.layers = layers
-        self.prob_L = prob_L
-
-    def forward(self, layer):
-        return 1 - layer / self.layers * (1 - self.prob_L)
