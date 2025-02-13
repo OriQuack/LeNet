@@ -6,7 +6,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset import load_dataset
-from utils import load_model, try_makedir
+from utils import load_model, try_makedir, get_optimizer
 from run import train_one_epoch
 from run import test_one_epoch
 
@@ -15,12 +15,7 @@ def train_one_dataset(params, training_loader, validation_loader, writer):
     model = load_model(params)
 
     # Optimizer
-    optimizer = optim.SGD(
-        model.parameters(),
-        lr=params.lr,
-        momentum=params.momentum,
-        weight_decay=params.weight_decay,
-    )
+    optimizer = get_optimizer(params, model)
 
     # Learning rate scheduler
     scheduler = optim.lr_scheduler.MultiStepLR(
@@ -86,9 +81,8 @@ if __name__ == "__main__":
     parser.add_argument("--load", type=bool, default=False)
     parser.add_argument("--load_epoch", type=int, default=30)
 
-    # Mode
-    # parser.add_argument("--train", type=bool, default=True)
-    # parser.add_argument("--test", type=bool, default=False)
+    # Optimizer
+    parser.add_argument("--optimizer", type=str, default="SGD")
 
     # Hyperparameters
     parser.add_argument("--batch_size", type=int, default=16)
