@@ -15,7 +15,7 @@ class VisionTransformer(nn.Module):
         ff_dim=3072,
         nhead=12,
         patch_size=8,
-        dropout=0.0,
+        dropout=0.1,
         fine_tune=False,
     ):
         super(VisionTransformer, self).__init__()

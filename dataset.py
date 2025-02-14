@@ -41,7 +41,7 @@ def load_dataset(dataset, batch_size=4, augmentation=False):
             "./data", split="train", transform=transform_train, download=True
         )
         validation_set = torchvision.datasets.SVHN(
-            "./data", split="train", transform=transform_test, download=True
+            "./data", split="test", transform=transform_test, download=True
         )
         img_dim = list([batch_size, 3, 32, 32])
     elif dataset == "CIFAR10":  # 3x32x32
@@ -52,6 +52,30 @@ def load_dataset(dataset, batch_size=4, augmentation=False):
             "./data", train=False, transform=transform_test, download=True
         )
         img_dim = list([batch_size, 3, 32, 32])
+    # elif dataset == "ImageNet":
+    #     transform_train = transforms.Compose(
+    #         [
+    #             transforms.ToTensor(),
+    #             transforms.RandomHorizontalFlip(p=0.5),
+    #             transforms.RandomResizedCrop(size=(224, 224)),
+    #             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    #         ]
+    #     )
+    #     transform_test = transforms.Compose(
+    #         [
+    #             transforms.ToTensor(),
+    #             transforms.RandomResizedCrop(size=(224, 224)),
+    #             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    #         ]
+    #     )
+    #     training_set = torchvision.datasets.ImageNet(
+    #         "./data", split="train", transform=transform_train, download=True
+    #     )
+    #     validation_set = torchvision.datasets.ImageNet(
+    #         "./data", split="val", transform=transform_test, download=True
+    #     )
+    #     img_dim = list([batch_size, 3, 224, 224])
+
     else:
         raise Exception("Dataset not available")
 
