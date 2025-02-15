@@ -5,6 +5,8 @@ import torch.nn.functional as F
 from einops import rearrange
 
 
+# TODO: learning rate scheduler (warm-up 포함) 구현
+# TODO: fine-tuning 모드에서 이미지 resolution이 다를 때 interpolation 구현
 class VisionTransformer(nn.Module):
     def __init__(
         self,
@@ -62,7 +64,7 @@ class VisionTransformer(nn.Module):
             )
 
     def forward(self, inputs, labels):
-        patches = self.extract_patches(inputs)
+        patches = self.patch_partition(inputs)
 
         # Add class token
         c_token = self.class_token(
@@ -88,7 +90,7 @@ class VisionTransformer(nn.Module):
 
         return loss, outputs
 
-    def extract_patches(self, inputs):
+    def patch_partition(self, inputs):
         B, C, H, W = inputs.shape
         x = inputs.reshape(
             B,
