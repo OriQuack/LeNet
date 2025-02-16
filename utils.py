@@ -9,6 +9,7 @@ from models.StochasticDepth import StochasticDepth
 from models.DenseNet import DenseNet
 from models.FractalNet import FractalNet
 from models.VisionTransformer import VisionTransformer
+from models.SwinTransformer import SwinTransformer
 
 
 def try_makedir(path):
@@ -36,6 +37,8 @@ def load_model(params):
         model = FractalNet(params.img_dim).to(device)
     elif params.model == "VisionTransformer":
         model = VisionTransformer(params.img_dim).to(device)
+    elif params.model == "SwinTransformer":
+        model = SwinTransformer(params.img_dim).to(device)
     else:
         raise Exception("Model not available")
 

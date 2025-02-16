@@ -52,29 +52,32 @@ def load_dataset(dataset, batch_size=4, augmentation=False):
             "./data", train=False, transform=transform_test, download=True
         )
         img_dim = list([batch_size, 3, 32, 32])
-    # elif dataset == "ImageNet":
-    #     transform_train = transforms.Compose(
-    #         [
-    #             transforms.ToTensor(),
-    #             transforms.RandomHorizontalFlip(p=0.5),
-    #             transforms.RandomResizedCrop(size=(224, 224)),
-    #             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    #         ]
-    #     )
-    #     transform_test = transforms.Compose(
-    #         [
-    #             transforms.ToTensor(),
-    #             transforms.RandomResizedCrop(size=(224, 224)),
-    #             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    #         ]
-    #     )
-    #     training_set = torchvision.datasets.ImageNet(
-    #         "./data", split="train", transform=transform_train, download=True
-    #     )
-    #     validation_set = torchvision.datasets.ImageNet(
-    #         "./data", split="val", transform=transform_test, download=True
-    #     )
-    #     img_dim = list([batch_size, 3, 224, 224])
+    elif dataset == "ImageNet":
+        # ImageNet sample
+        # https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000
+        transform_train = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomResizedCrop(size=(224, 224)),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            ]
+        )
+        transform_test = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.RandomResizedCrop(size=(224, 224)),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            ]
+        )
+        training_set = torchvision.datasets.ImageFolder(
+            root="./data/imagenet-mini/train", transform=transform_train
+        )
+        validation_set = torchvision.datasets.ImageFolder(
+            root="./data/imagenet-mini/val", transform=transform_test
+        )
+
+        img_dim = list([batch_size, 3, 224, 224])
 
     else:
         raise Exception("Dataset not available")

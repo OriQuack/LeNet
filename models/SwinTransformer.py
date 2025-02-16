@@ -6,12 +6,13 @@ from einops import rearrange
 
 
 # TODO: Self-attention에 relative positional bias 구현
+# TODO: 각종 augmentation & regularization 구현
 class SwinTransformer(nn.Module):
     def __init__(
         self,
         input_dim,
         d_model=96,
-        num_classes=10,
+        num_classes=1000,
         nlayer=1,
         layers_layout=[2, 2, 6, 2],
         hidden_dim=[96, 192, 384, 768],
@@ -26,19 +27,20 @@ class SwinTransformer(nn.Module):
         self.device = torch.device(os.environ["TORCH_DEVICE"])
         self.layers_layout = layers_layout
         self.patch_size = patch_size
-        self.seq_len = input_size**2 // patch_size**2
-        self.num_features = patch_size**2 * input_channel
-        self.fmap_size = input_size // patch_size
 
         input_channel = input_dim[1]
         input_size = input_dim[2]
-
         assert input_size % patch_size == 0
+
+        self.seq_len = input_size**2 // patch_size**2
+        self.num_features = patch_size**2 * input_channel
+        self.fmap_size = input_size // patch_size
 
         # Loss
         self.loss_fn = nn.CrossEntropyLoss()
 
         # Net
+
         cur_seq_len = self.seq_len
         cur_fmap_size = self.fmap_size
         self.stages = nn.ModuleList()
@@ -47,7 +49,7 @@ class SwinTransformer(nn.Module):
 
             # Linear embedding
             if i == 0:
-                linear_emb = nn.Embedding(self.seq_len, d_model)
+                linear_emb = nn.Linear(patch_size**2 * input_channel, d_model)
                 stage.append(linear_emb)
             # Patch merging
             else:
@@ -117,7 +119,7 @@ class SwinTransformer(nn.Module):
         )
         # Permute: B, H//p, W//p, p, p, Channel
         x = x.permute(0, 2, 4, 3, 5, 1)
-        x = x.view(B, self.seq_len, self.num_features)
+        x = x.reshape(B, self.seq_len, self.num_features)
         return x
 
     def patch_merging(self, inputs, stage):
@@ -154,13 +156,13 @@ class SwinTransformerBlock(nn.Module):
         win_size=7,
         shifted=False,
     ):
-        super(SwinTransformerBlock).__init__()
+        super(SwinTransformerBlock, self).__init__()
         self.device = torch.device(os.environ["TORCH_DEVICE"])
         self.fmap_size = fmap_size
         self.win_size = win_size
         self.shifted = shifted
 
-        assert seq_len % (win_size**2) == 0
+        assert seq_len % (win_size**2) == 0 and fmap_size % win_size == 0
         self.nwindow = seq_len // (win_size**2)
 
         encoder_layer = nn.TransformerEncoderLayer(
@@ -179,44 +181,51 @@ class SwinTransformerBlock(nn.Module):
         encoded_list = torch.tensor((), requires_grad=True, device=self.device)
 
         for i in range(self.nwindow):
+            # Get one window
             input_window = inputs[
                 :, i * (self.win_size**2) : (i + 1) * (self.win_size**2), :
             ]
             if self.shifted:
                 idx = torch.arange(self.win_size**2, device=self.device)
                 left_mask = idx % self.win_size <= self.win_size // 2
+                left_mask = left_mask.repeat(self.win_size**2, 1)
                 top_mask = idx <= self.win_size**2 // 2
+                top_mask = top_mask.repeat(self.win_size**2, 1)
                 # If right-most and bottom-most window
                 if (i + 1) % (win_len) == 0 and i >= self.nwindow - win_len:
                     mask_a = (left_mask & top_mask).to(torch.float).to(self.device)
                     mask_b = (~left_mask & top_mask).to(torch.float).to(self.device)
                     mask_c = (left_mask & ~top_mask).to(torch.float).to(self.device)
                     mask_d = (~left_mask & ~top_mask).to(torch.float).to(self.device)
-                    a = self.encoder(inputs[input_window], mask=mask) * mask_a
-                    b = self.encoder(inputs[input_window], mask=mask) * mask_b
-                    c = self.encoder(inputs[input_window], mask=mask) * mask_c
-                    d = self.encoder(inputs[input_window], mask=mask) * mask_d
+                    a = self.encoder(input_window, mask=mask_a) * mask_a
+                    b = self.encoder(input_window, mask=mask_b) * mask_b
+                    c = self.encoder(input_window, mask=mask_c) * mask_c
+                    d = self.encoder(input_window, mask=mask_d) * mask_d
                     x = a + b + c + d
                 else:
                     # If right-most window
                     if (i + 1) % (win_len) == 0:
-                        mask = left_mask.to(torch.float).to(self.device)
+                        mask_a = left_mask.to(torch.float).to(self.device)
+                        mask_b = (~left_mask).to(torch.float).to(self.device)
+                        a = self.encoder(input_window, mask=mask_a) * mask_a
+                        b = self.encoder(input_window, mask=mask_b) * mask_b
+                        x = a + b
                     # If bottom-most window
                     elif i >= self.nwindow - win_len:
-                        mask = top_mask.to(torch.float).to(self.device)
+                        mask_a = top_mask.to(torch.float).to(self.device)
+                        mask_b = (~top_mask).to(torch.float).to(self.device)
+                        a = self.encoder(input_window, mask=mask_a) * mask_a
+                        b = self.encoder(input_window, mask=mask_b) * mask_b
+                        x = a + b
                     # Default
                     else:
-                        mask = torch.ones(
-                            self.win_size**2, dtype=torch.float, device=self.device
-                        )
-                    mask_a = mask
-                    mask_b = ~mask
-                    a = self.encoder(inputs[input_window], mask=mask_a) * mask_a
-                    b = self.encoder(inputs[input_window], mask=mask_b) * mask_b
-                    x = a + b
+                        x = self.encoder(input_window)
+            else:
+                x = self.encoder(input_window)
 
-            x = self.encoder(inputs[input_window])
             encoded_list = torch.cat((encoded_list, x), 1)
+
+        return encoded_list
 
     def window_partition(self, inputs):
         B, S, C = inputs.shape
