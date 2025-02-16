@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class ResNet(nn.Module):
-    def __init__(self, input_dim, layers_layout=[64, 128, 256, 512]):
+    def __init__(self, input_dim, num_classes=10, layers_layout=[64, 128, 256, 512]):
         super(ResNet, self).__init__()
         num_blocks = len(layers_layout)
 
@@ -31,7 +31,7 @@ class ResNet(nn.Module):
 
         self.avg_pool = nn.AvgPool2d(input_size // 2 ** (num_blocks - 1))
 
-        self.fc = nn.Linear(layers_layout[num_blocks - 1], 10)
+        self.fc = nn.Linear(layers_layout[num_blocks - 1], num_classes)
         # Kaiming Initialization
         nn.init.kaiming_normal_(self.fc.weight, mode="fan_in", nonlinearity="relu")
 

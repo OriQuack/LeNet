@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from einops import rearrange
 
 
-# TODO: learning rate scheduler (warm-up 포함) 구현
 # TODO: Self-attention에 relative positional bias 구현
 class SwinTransformer(nn.Module):
     def __init__(
@@ -18,8 +17,9 @@ class SwinTransformer(nn.Module):
         hidden_dim=[96, 192, 384, 768],
         ff_dim=[96 * 4, 192 * 4, 384 * 4, 768 * 4],
         nhead=[3, 6, 12, 24],
-        patch_size=8,
-        dropout=0.1,
+        patch_size=4,
+        win_size=7,
+        dropout=0.0,
         fine_tune=False,
     ):
         super(SwinTransformer, self).__init__()
@@ -39,18 +39,26 @@ class SwinTransformer(nn.Module):
         self.loss_fn = nn.CrossEntropyLoss()
 
         # Net
-
+        cur_seq_len = self.seq_len
+        cur_fmap_size = self.fmap_size
         self.stages = nn.ModuleList()
         for i, nblock in enumerate(layers_layout):
             stage = nn.Sequential()
-            # Linear embedding or patch merging
+
+            # Linear embedding
             if i == 0:
                 linear_emb = nn.Embedding(self.seq_len, d_model)
                 stage.append(linear_emb)
+            # Patch merging
             else:
+                # <Patch merging layer>
                 in_dim = 4 * d_model * (2 ** (i - 1))
                 fc = nn.Linear(in_dim, in_dim // 2)
                 stage.append(fc)
+
+                # Change due to merge
+                cur_seq_len = cur_seq_len // 4
+                cur_fmap_size = cur_fmap_size // 2
 
             for block_set in range(nblock // 2):
                 w_block = SwinTransformerBlock(
@@ -59,8 +67,9 @@ class SwinTransformer(nn.Module):
                     ff_dim[i],
                     dropout,
                     nlayer,
-                    self.seq_len,
-                    self.fmap_size,
+                    cur_seq_len,
+                    cur_fmap_size,
+                    win_size=win_size,
                     shifted=False,
                 )
                 sw_block = SwinTransformerBlock(
@@ -69,21 +78,26 @@ class SwinTransformer(nn.Module):
                     ff_dim[i],
                     dropout,
                     nlayer,
-                    self.seq_len,
-                    self.fmap_size,
+                    cur_seq_len,
+                    cur_fmap_size,
+                    win_size=win_size,
                     shifted=True,
                 )
                 stage.append(w_block)
                 stage.append(sw_block)
             self.stages.append(stage)
 
+        self.fc = nn.Linear(d_model * (2 ** (len(layers_layout) - 1)), num_classes)
+
     def forward(self, inputs, labels):
         patches = self.patch_partition(inputs)
 
         for i, stage in enumerate(self.stages):
             if i != 0:
-                patches = self.patch_merging(patches)
+                patches = self.patch_merging(patches, stage=i + 1)
             patches = stage(patches)
+
+        outputs = self.fc(patches)
 
         loss = self.loss_fn(outputs, labels)
         _, outputs = torch.max(outputs, dim=1)
@@ -91,6 +105,7 @@ class SwinTransformer(nn.Module):
         return loss, outputs
 
     def patch_partition(self, inputs):
+        # Batch, Channel, Height, Width
         B, C, H, W = inputs.shape
         x = inputs.view(
             B,
@@ -100,24 +115,30 @@ class SwinTransformer(nn.Module):
             W // self.patch_size,
             self.patch_size,
         )
-        # Permute: B, H//p, W//p, p, p, C
+        # Permute: B, H//p, W//p, p, p, Channel
         x = x.permute(0, 2, 4, 3, 5, 1)
         x = x.view(B, self.seq_len, self.num_features)
         return x
 
-    def patch_merging(self, inputs, win_size=7):
-        B, S, C = inputs.shape
+    def patch_merging(self, inputs, stage):
+        # Batch, seq_len: H//p * W//p, D: 2^(stage-2) * d_model
+        B, S, D = inputs.shape
+        # B, H//2p, 2, W//2p, 2, D
         x = inputs.view(
             B,
-            self.fmap_size // (self.patch_size * 2),
-            self.patch_size * 2,
-            self.fmap_size // (self.patch_size * 2),
-            self.patch_size * 2,
-            C,
+            self.fmap_size // 2,
+            2,
+            self.fmap_size // 2,
+            2,
+            D,
         )
-        # Permute: B, F//2p, F//2p, 2p, 2p, C
-        x = x.permute(0, 2, 4, 3, 5, 1)
-        x = x.view(B, -1, 4 * C)
+        # Permute: B, H//2p, W//2p, 2, 2, D
+        x = x.permute(0, 1, 3, 2, 4, 5)
+        x = x.view(B, -1, 4 * D)
+
+        self.fmap_size = self.fmap_size // 2
+        self.patch_size = self.patch_size * 2
+        return x
 
 
 class SwinTransformerBlock(nn.Module):
