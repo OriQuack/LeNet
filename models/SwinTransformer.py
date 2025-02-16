@@ -178,83 +178,102 @@ class SwinTransformerBlock(nn.Module):
 
     def forward(self, inputs):
         win_len = self.fmap_size // self.win_size
-        encoded_list = torch.tensor((), requires_grad=True, device=self.device)
+        encoded_windows = []
+
+        if self.shifted:
+            idx = torch.arange(self.win_size**2, device=self.device)
+            left_mask = idx % self.win_size <= self.win_size // 2
+            top_mask = idx <= (self.win_size**2) // 2
+
+            atten_left_mask = left_mask.unsqueeze(1) & left_mask.unsqueeze(0)
+            atten_top_mask = top_mask.unsqueeze(1) & top_mask.unsqueeze(0)
+
+            left_mask = left_mask.unsqueeze(0).unsqueeze(2)
+            top_mask = top_mask.unsqueeze(0).unsqueeze(2)
+        else:
+            atten_left_mask = atten_top_mask = left_mask = top_mask = None
 
         for i in range(self.nwindow):
-            # Get one window
-            input_window = inputs[
-                :, i * (self.win_size**2) : (i + 1) * (self.win_size**2), :
-            ]
+            start_idx = i * (self.win_size**2)
+            end_idx = (i + 1) * (self.win_size**2)
+            input_window = inputs[:, start_idx:end_idx, :]
+
             if self.shifted:
-                idx = torch.arange(self.win_size**2, device=self.device)
-                left_mask = idx % self.win_size <= self.win_size // 2
-                atten_left_mask = left_mask.unsqueeze(1) & left_mask.unsqueeze(0)
-                top_mask = idx <= self.win_size**2 // 2
-                atten_top_mask = top_mask.unsqueeze(1) & top_mask.unsqueeze(0)
-
-                left_mask = left_mask.unsqueeze(0).unsqueeze(2)
-                top_mask = top_mask.unsqueeze(0).unsqueeze(2)
-
-                # If right-most and bottom-most window
-                if (i + 1) % (win_len) == 0 and i >= self.nwindow - win_len:
-                    mask_a = torch.zeros_like(atten_left_mask)
-                    mask_b = torch.zeros_like(atten_left_mask)
-                    mask_c = torch.zeros_like(atten_left_mask)
-                    mask_d = torch.zeros_like(atten_left_mask)
-                    mask_a.masked_fill_(
-                        (atten_left_mask & atten_top_mask) == False, float("-inf")
-                    )
-                    mask_b.masked_fill_(
-                        (~atten_left_mask & atten_top_mask) == False, float("-inf")
-                    )
-                    mask_c.masked_fill_(
-                        (atten_left_mask & ~atten_top_mask) == False, float("-inf")
-                    )
-                    mask_d.masked_fill_(
-                        (~atten_left_mask & ~atten_top_mask) == False, float("-inf")
-                    )
-
-                    a = self.encoder(input_window, mask=mask_a) * (left_mask & top_mask)
-                    b = self.encoder(input_window, mask=mask_b) * (
-                        ~left_mask & top_mask
-                    )
-                    c = self.encoder(input_window, mask=mask_c) * (
-                        left_mask & ~top_mask
-                    )
-                    d = self.encoder(input_window, mask=mask_d) * (
-                        ~left_mask & ~top_mask
-                    )
-                    x = a + b + c + d
-                else:
-                    # If right-most window
-                    if (i + 1) % (win_len) == 0:
-                        mask_a = torch.zeros_like(atten_left_mask)
-                        mask_b = torch.zeros_like(atten_left_mask)
-                        mask_a.masked_fill_(atten_left_mask == False, float("-inf"))
-                        mask_b.masked_fill_((~atten_left_mask) == False, float("-inf"))
-
-                        a = self.encoder(input_window, mask=mask_a) * left_mask
-                        b = self.encoder(input_window, mask=mask_b) * ~left_mask
-                        x = a + b
-                    # If bottom-most window
-                    elif i >= self.nwindow - win_len:
-                        mask_a = torch.zeros_like(atten_left_mask)
-                        mask_b = torch.zeros_like(atten_left_mask)
-                        mask_a.masked_fill_(atten_top_mask == False, float("-inf"))
-                        mask_b.masked_fill_((~atten_top_mask) == False, float("-inf"))
-
-                        a = self.encoder(input_window, mask=mask_a) * top_mask
-                        b = self.encoder(input_window, mask=mask_b) * ~top_mask
-                        x = a + b
-                    # Default
-                    else:
-                        x = self.encoder(input_window)
+                x = self._apply_shifted_encoder(
+                    input_window,
+                    i,
+                    win_len,
+                    atten_left_mask,
+                    atten_top_mask,
+                    left_mask,
+                    top_mask,
+                )
             else:
                 x = self.encoder(input_window)
 
-            encoded_list = torch.cat((encoded_list, x), 1)
+            encoded_windows.append(x)
 
-        return encoded_list
+        return torch.cat(encoded_windows, dim=1)
+
+    def _apply_shifted_encoder(
+        self,
+        input_window,
+        i,
+        win_len,
+        atten_left_mask,
+        atten_top_mask,
+        left_mask_exp,
+        top_mask_exp,
+    ):
+        # If bottom-right window
+        if (i + 1) % win_len == 0 and i >= self.nwindow - win_len:
+            mask_a = torch.zeros_like(atten_left_mask)
+            mask_b = torch.zeros_like(atten_left_mask)
+            mask_c = torch.zeros_like(atten_left_mask)
+            mask_d = torch.zeros_like(atten_left_mask)
+
+            mask_a.masked_fill_(~(atten_left_mask & atten_top_mask), float("-inf"))
+            mask_b.masked_fill_(~(~atten_left_mask & atten_top_mask), float("-inf"))
+            mask_c.masked_fill_(~(atten_left_mask & ~atten_top_mask), float("-inf"))
+            mask_d.masked_fill_(~(~atten_left_mask & ~atten_top_mask), float("-inf"))
+
+            a = self.encoder(input_window, mask=mask_a) * (left_mask_exp & top_mask_exp)
+            b = self.encoder(input_window, mask=mask_b) * (
+                (~left_mask_exp) & top_mask_exp
+            )
+            c = self.encoder(input_window, mask=mask_c) * (
+                left_mask_exp & (~top_mask_exp)
+            )
+            d = self.encoder(input_window, mask=mask_d) * (
+                (~left_mask_exp) & (~top_mask_exp)
+            )
+            return a + b + c + d
+
+        # If right-most window
+        elif (i + 1) % win_len == 0:
+            mask_a = torch.zeros_like(atten_left_mask)
+            mask_b = torch.zeros_like(atten_left_mask)
+            mask_a.masked_fill_(~atten_left_mask, float("-inf"))
+            mask_b.masked_fill_(~(~atten_left_mask), float("-inf"))
+
+            a = self.encoder(input_window, mask=mask_a) * left_mask_exp
+            b = self.encoder(input_window, mask=mask_b) * (~left_mask_exp)
+            return a + b
+
+        # If bottom-most window
+        elif i >= self.nwindow - win_len:
+            mask_a = torch.zeros_like(atten_top_mask)
+            mask_b = torch.zeros_like(atten_top_mask)
+            mask_a.masked_fill_(~atten_top_mask, float("-inf"))
+            mask_b.masked_fill_(~(~atten_top_mask), float("-inf"))
+
+            a = self.encoder(input_window, mask=mask_a) * top_mask_exp
+            b = self.encoder(input_window, mask=mask_b) * (~top_mask_exp)
+            return a + b
+
+        # Default
+        else:
+            return self.encoder(input_window)
 
     def window_partition(self, inputs):
         B, S, C = inputs.shape
