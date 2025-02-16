@@ -190,8 +190,6 @@ class SwinTransformerBlock(nn.Module):
 
             left_mask = left_mask.unsqueeze(0).unsqueeze(2)
             top_mask = top_mask.unsqueeze(0).unsqueeze(2)
-        else:
-            atten_left_mask = atten_top_mask = left_mask = top_mask = None
 
         for i in range(self.nwindow):
             start_idx = i * (self.win_size**2)
@@ -199,7 +197,7 @@ class SwinTransformerBlock(nn.Module):
             input_window = inputs[:, start_idx:end_idx, :]
 
             if self.shifted:
-                x = self._apply_shifted_encoder(
+                x = self.apply_shifted_win_encoder(
                     input_window,
                     i,
                     win_len,
@@ -215,7 +213,7 @@ class SwinTransformerBlock(nn.Module):
 
         return torch.cat(encoded_windows, dim=1)
 
-    def _apply_shifted_encoder(
+    def apply_shifted_win_encoder(
         self,
         input_window,
         i,
@@ -300,5 +298,5 @@ class SwinTransformerBlock(nn.Module):
         # win1: 0 ~ win_size**2 - 1
         # win2: win_size**2 ~ 2 * win_size**2 - 1
         # ...
-        x = x.view(B, S, C)
+        x = x.reshape(B, S, C)
         return x
