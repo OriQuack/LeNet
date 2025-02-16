@@ -58,5 +58,39 @@ def get_optimizer(params, model):
         optimizer = optim.Adam(
             model.parameters(),
             lr=params.lr,
+            weight_decay=params.weight_decay,
+        )
+    elif params.optimizer == "AdamW":
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=params.lr,
+            weight_decay=params.weight_decay,
         )
     return optimizer
+
+
+def get_scheduler(params, optimizer):
+    schedulers = []
+    # Warmup scheduler
+    if params.warmup != 0:
+        warmup_sched = optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.0, end_factor=1.0, total_iters=params.warmup
+        )
+        schedulers.append(warmup_sched)
+
+    # Default scheduler
+    if params.scheduler == "None":
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=1)
+    elif params.scheduler == "MultiStep":
+        scheduler = optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=[40, 60], gamma=0.1
+        )
+    elif params.scheduler == "Cosine":
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=(params.epochs - params.warmup)
+        )
+    schedulers.append(scheduler)
+
+    return optim.lr_scheduler.SequentialLR(
+        optimizer, schedulers=schedulers, milestones=[params.warmup]
+    )

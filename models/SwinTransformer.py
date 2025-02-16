@@ -6,7 +6,7 @@ from einops import rearrange
 
 
 # TODO: learning rate scheduler (warm-up 포함) 구현
-# TODO: fine-tuning 모드에서 이미지 resolution이 다를 때 interpolation 구현
+# TODO: Self-attention에 relative positional bias 구현
 class SwinTransformer(nn.Module):
     def __init__(
         self,

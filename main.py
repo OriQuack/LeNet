@@ -83,6 +83,8 @@ if __name__ == "__main__":
 
     # Optimizer
     parser.add_argument("--optimizer", type=str, default="SGD")
+    parser.add_argument("--scheduler", type=str, default="None")
+    parser.add_argument("--warmup", type=int, default=0)
 
     # Hyperparameters
     parser.add_argument("--batch_size", type=int, default=16)
