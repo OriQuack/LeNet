@@ -110,7 +110,7 @@ if __name__ == "__main__":
     if params.device == "mps" and torch.backends.mps.is_available():
         os.environ["TORCH_DEVICE"] = "mps"
         print("Training on MPS...")
-    elif params.device == "gpu" and torch.backends.mps.is_available():
+    elif params.device == "gpu" and torch.cuda.is_available():
         os.environ["TORCH_DEVICE"] = "cuda"
         print("Training on GPU...")
     else:

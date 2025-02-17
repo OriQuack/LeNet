@@ -177,6 +177,8 @@ class SwinTransformerBlock(nn.Module):
         self.encoder = nn.TransformerEncoder(encoder_layer, nlayer)
 
     def forward(self, inputs):
+        inputs = self.window_partition(inputs)
+
         win_len = self.fmap_size // self.win_size
         encoded_windows = []
 
@@ -212,6 +214,34 @@ class SwinTransformerBlock(nn.Module):
             encoded_windows.append(x)
 
         return torch.cat(encoded_windows, dim=1)
+
+    def window_partition(self, inputs):
+        B, S, C = inputs.shape
+
+        if self.shifted:
+            # B, patch_H_idx, patch_W_idx, C
+            x = inputs.view(B, self.fmap_size, self.fmap_size, C)
+            # cyclic shift
+            x = torch.roll(
+                x, shifts=(-self.win_size // 2, -self.win_size // 2), dims=(1, 2)
+            )
+
+        # B, win_H_idx, patch_H_idx, win_W_idx, patch_W_idx, C
+        x = inputs.view(
+            B,
+            self.fmap_size // self.win_size,
+            self.win_size,
+            self.fmap_size // self.win_size,
+            self.win_size,
+            C,
+        )
+        x = x.permute(0, 1, 3, 2, 4, 5)
+        # S index:
+        # win1: 0 ~ win_size**2 - 1
+        # win2: win_size**2 ~ 2 * win_size**2 - 1
+        # ...
+        x = x.reshape(B, S, C)
+        return x
 
     def apply_shifted_win_encoder(
         self,
@@ -272,31 +302,3 @@ class SwinTransformerBlock(nn.Module):
         # Default
         else:
             return self.encoder(input_window)
-
-    def window_partition(self, inputs):
-        B, S, C = inputs.shape
-
-        if self.shifted:
-            # B, patch_H_idx, patch_W_idx, C
-            x = inputs.view(B, self.fmap_size, self.fmap_size, C)
-            # cyclic shift
-            x = torch.roll(
-                x, shifts=(-self.win_size // 2, -self.win_size // 2), dim=(1, 2)
-            )
-
-        # B, win_H_idx, patch_H_idx, win_W_idx, patch_W_idx, C
-        x = inputs.view(
-            B,
-            self.fmap_size // self.win_size,
-            self.win_size,
-            self.fmap_size // self.win_size,
-            self.win_size,
-            C,
-        )
-        x = x.permute(0, 1, 3, 2, 4, 5)
-        # S index:
-        # win1: 0 ~ win_size**2 - 1
-        # win2: win_size**2 ~ 2 * win_size**2 - 1
-        # ...
-        x = x.reshape(B, S, C)
-        return x
