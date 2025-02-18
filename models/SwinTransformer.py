@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from einops import rearrange
 
 
-# TODO: Self-attention에 relative positional bias 구현
+# TODO: 각 Transformer Block을 따로 구현 & Self-attention에 relative positional bias 구현
 # TODO: 각종 augmentation & regularization 구현
 class SwinTransformer(nn.Module):
     def __init__(
