@@ -10,6 +10,7 @@ from models.DenseNet import DenseNet
 from models.FractalNet import FractalNet
 from models.VisionTransformer import VisionTransformer
 from models.SwinTransformer import SwinTransformer
+from models.ConvNeXt import ConvNeXt
 
 
 def try_makedir(path):
@@ -39,6 +40,8 @@ def load_model(params):
         model = VisionTransformer(params.img_dim).to(device)
     elif params.model == "SwinTransformer":
         model = SwinTransformer(params.img_dim).to(device)
+    elif params.model == "ConvNeXt":
+        model = ConvNeXt(params.img_dim).to(device)
     else:
         raise Exception("Model not available")
 
