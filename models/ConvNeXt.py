@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# TODO: 각종 augmentation & regularization 구현
 class ConvNeXt(nn.Module):
     def __init__(
         self,
