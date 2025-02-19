@@ -25,17 +25,20 @@ class ConvNeXt(nn.Module):
 
         # Build ConvBlocks
         self.convBlocks = nn.Sequential()
-        for channel, nblocks in zip(channels_layout, blocks_layout):
-            for block in range(nblocks):
-                convBlock = ConvNeXtBlock(channel)
+        for i in range(num_stages):
+            for block in range(blocks_layout[i]):
+                convBlock = ConvNeXtBlock(channels_layout[i])
                 self.convBlocks.append(convBlock)
-            ln = LayerNorm(channel)
-            downsampling = nn.Conv2d(channel, channel, 2, 2)
+            # Between blocks
+            if i == num_stages - 1:
+                break
+            ln = LayerNorm(channels_layout[i])
+            downsampling = nn.Conv2d(channels_layout[i], channels_layout[i + 1], 2, 2)
             self.convBlocks.append(ln)
             self.convBlocks.append(downsampling)
 
         self.ln2 = LayerNorm(channels_layout[-1])
-        self.avg_pool = nn.AvgPool2d(input_size // 2 ** (num_stages - 1))
+        self.avg_pool = nn.AvgPool2d(input_size // 4 // 2 ** (num_stages - 1))
 
         self.fc = nn.Linear(channels_layout[-1], num_classes)
 
@@ -74,7 +77,7 @@ class ConvNeXtBlock(nn.Module):
         return outputs
 
 
-# Apply normalization per channel
+# Apply normalization for each (H, W) along channel dimension
 # Shape: (Batch, Channel, H, W)
 class LayerNorm(nn.Module):
     def __init__(self, channel):
