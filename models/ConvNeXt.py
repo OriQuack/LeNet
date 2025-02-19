@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+# TODO: ResNeXt의 depthwise convolution 구현 안되어 있음
 # TODO: 각종 augmentation & regularization 구현
 class ConvNeXt(nn.Module):
     def __init__(
