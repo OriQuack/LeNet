@@ -11,6 +11,7 @@ from models.FractalNet import FractalNet
 from models.VisionTransformer import VisionTransformer
 from models.SwinTransformer import SwinTransformer
 from models.ConvNeXt import ConvNeXt
+from models.MLPMixer import MLPMixer
 
 
 def try_makedir(path):
@@ -42,6 +43,8 @@ def load_model(params):
         model = SwinTransformer(params.img_dim).to(device)
     elif params.model == "ConvNeXt":
         model = ConvNeXt(params.img_dim).to(device)
+    elif params.model == "MLPMixer":
+        model = MLPMixer(params.img_dim).to(device)
     else:
         raise Exception("Model not available")
 

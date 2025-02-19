@@ -5,15 +5,18 @@ import torch.nn.functional as F
 from einops import rearrange
 
 
+# TODO: fine-tuning 모드에서 이미지 resolution이 다를 때 interpolation 구현
 # TODO: 각종 augmentation & regularization 구현
 class MLPMixer(nn.Module):
     def __init__(
         self,
         input_dim,
         num_classes=10,
-        nlayer=12,
-        hidden_dim=768,
+        nlayer=8,
         patch_size=8,
+        hidden_dim=512,
+        mlp_dim_C=2048,
+        mlp_dim_S=256,
         dropout=0.1,
     ):
         super(MLPMixer, self).__init__()
@@ -36,20 +39,26 @@ class MLPMixer(nn.Module):
 
         self.mixerLayers = nn.ModuleList()
         for i in range(nlayer):
-            mixerLayer = MixerLayer(self.seqlen, hidden_dim)
+            mixerLayer = MixerLayer(self.seqlen, hidden_dim, mlp_dim_C, mlp_dim_S)
             self.mixerLayers.append(mixerLayer)
 
         self.avg_pool = nn.AvgPool1d(self.seqlen)
         self.fc = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, inputs, labels):
+        # Out: (B, S, p^2*Channel)
         patches = self.patch_partition(inputs)
+        # Out: (B, S, Hidden_dim)
         x = self.linear_proj(patches)
 
         for layer in self.mixerLayers:
             x = layer(x)
 
+        # Out: (B, Hidden_dim, S)
+        x = x.transpose(1, 2).contiguous()
+        # Out: (B, Hidden_dim)
         x = self.avg_pool(x)
+        x = torch.squeeze(x)
         outputs = self.fc(x)
 
         loss = self.loss_fn(outputs, labels)
@@ -69,18 +78,18 @@ class MLPMixer(nn.Module):
         )
         # Permute: B, H//p, W//p, p, p, C
         x = x.permute(0, 2, 4, 3, 5, 1).contiguous()
-        x = x.view(B, self.seq_len, self.num_features)
+        x = x.view(B, self.seqlen, self.num_features)
         return x
 
 
-class MixerLayer(nn.Moduel):
-    def __init__(self, seqlen, hidden_dim):
+class MixerLayer(nn.Module):
+    def __init__(self, seqlen, hidden_dim, mlp_dim_C, mlp_dim_S):
         super(MixerLayer, self).__init__()
         self.ln1 = nn.LayerNorm(hidden_dim)
-        self.mlpBlock1 = TokenMixingMLP(seqlen)
+        self.mlpBlock1 = TokenMixingMLP(seqlen, mlp_dim_C)
 
         self.ln2 = nn.LayerNorm(hidden_dim)
-        self.mlpBlock2 = ChannelMixingMLP(hidden_dim)
+        self.mlpBlock2 = ChannelMixingMLP(hidden_dim, mlp_dim_S)
 
     def forward(self, inputs):
         x = self.ln1(inputs)
@@ -97,22 +106,22 @@ class MixerLayer(nn.Moduel):
 
 
 class TokenMixingMLP(nn.Module):
-    def __init__(self, seqlen):
+    def __init__(self, seqlen, hidden_dim):
         super(TokenMixingMLP, self).__init__()
-        self.fc1 = nn.Linear(seqlen, seqlen)
+        self.fc1 = nn.Linear(seqlen, hidden_dim)
         self.gelu = nn.GELU()
-        self.fc2 = nn.Linear(seqlen, seqlen)
+        self.fc2 = nn.Linear(hidden_dim, seqlen)
 
     def forward(self, x):
         return self.fc2(self.gelu(self.fc1(x)))
 
 
 class ChannelMixingMLP(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, hidden_dim):
         super(ChannelMixingMLP, self).__init__()
-        self.fc1 = nn.Linear(channel, channel)
+        self.fc1 = nn.Linear(channel, hidden_dim)
         self.gelu = nn.GELU()
-        self.fc2 = nn.Linear(channel, channel)
+        self.fc2 = nn.Linear(hidden_dim, channel)
 
     def forward(self, x):
         return self.fc2(self.gelu(self.fc1(x)))
