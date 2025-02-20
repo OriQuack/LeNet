@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from einops import rearrange
 
 
+# TODO: Depthwise convolution 구현 안되어 있음
 # TODO: fine-tuning 모드에서 이미지 resolution이 다를 때 interpolation 구현
 # TODO: 각종 augmentation & regularization 구현
 class ConvMixer(nn.Module):
