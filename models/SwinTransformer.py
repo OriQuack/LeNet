@@ -2,10 +2,11 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 from einops import rearrange
 
 
-# TODO: 각 Transformer Block을 따로 구현 & Self-attention에 relative positional bias 구현
+# TODO: Self-attention에 relative positional bias 구현
 # TODO: 각종 augmentation & regularization 구현
 class SwinTransformer(nn.Module):
     def __init__(
@@ -46,7 +47,6 @@ class SwinTransformer(nn.Module):
         self.stages = nn.ModuleList()
         for i, nblock in enumerate(layers_layout):
             stage = nn.Sequential()
-
             # Linear embedding
             if i == 0:
                 linear_emb = nn.Linear(patch_size**2 * input_channel, d_model)
@@ -73,6 +73,7 @@ class SwinTransformer(nn.Module):
                     cur_fmap_size,
                     win_size=win_size,
                     shifted=False,
+                    device=self.device,
                 )
                 sw_block = SwinTransformerBlock(
                     hidden_dim[i],
@@ -84,6 +85,7 @@ class SwinTransformer(nn.Module):
                     cur_fmap_size,
                     win_size=win_size,
                     shifted=True,
+                    device=self.device,
                 )
                 stage.append(w_block)
                 stage.append(sw_block)
@@ -94,12 +96,16 @@ class SwinTransformer(nn.Module):
     def forward(self, inputs, labels):
         patches = self.patch_partition(inputs)
 
+        cur_fmap_size = self.fmap_size // 2
         for i, stage in enumerate(self.stages):
             if i != 0:
-                patches = self.patch_merging(patches, stage=i + 1)
+                patches = self.patch_merging(patches, cur_fmap_size)
+                cur_fmap_size = cur_fmap_size // 2
             patches = stage(patches)
 
-        outputs = self.fc(patches)
+        # Global average pooling
+        x = torch.mean(patches, dim=1)
+        outputs = self.fc(x)
 
         loss = self.loss_fn(outputs, labels)
         _, outputs = torch.max(outputs, dim=1)
@@ -118,28 +124,27 @@ class SwinTransformer(nn.Module):
             self.patch_size,
         )
         # Permute: B, H//p, W//p, p, p, Channel
-        x = x.permute(0, 2, 4, 3, 5, 1)
-        x = x.reshape(B, self.seq_len, self.num_features)
+        x = x.permute(0, 2, 4, 3, 5, 1).contiguous()
+        x = x.view(B, self.seq_len, self.num_features)
         return x
 
-    def patch_merging(self, inputs, stage):
+    def patch_merging(self, inputs, fmap_size):
         # Batch, seq_len: H//p * W//p, D: 2^(stage-2) * d_model
         B, S, D = inputs.shape
         # B, H//2p, 2, W//2p, 2, D
         x = inputs.view(
             B,
-            self.fmap_size // 2,
+            fmap_size,
             2,
-            self.fmap_size // 2,
+            fmap_size,
             2,
             D,
         )
         # Permute: B, H//2p, W//2p, 2, 2, D
-        x = x.permute(0, 1, 3, 2, 4, 5)
-        x = x.reshape(B, -1, 4 * D)
+        x = x.permute(0, 1, 3, 2, 4, 5).contiguous()
+        # B, seq_len, 4 * D
+        x = x.view(B, -1, 4 * D)
 
-        self.fmap_size = self.fmap_size // 2
-        self.patch_size = self.patch_size * 2
         return x
 
 
@@ -155,26 +160,20 @@ class SwinTransformerBlock(nn.Module):
         fmap_size,
         win_size=7,
         shifted=False,
+        device=None,
     ):
         super(SwinTransformerBlock, self).__init__()
-        self.device = torch.device(os.environ["TORCH_DEVICE"])
         self.fmap_size = fmap_size
         self.win_size = win_size
         self.shifted = shifted
+        self.device = device
 
         assert seq_len % (win_size**2) == 0 and fmap_size % win_size == 0
         self.nwindow = seq_len // (win_size**2)
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            hidden_dim,
-            nhead,
-            ff_dim,
-            activation="gelu",
-            dropout=dropout,
-            batch_first=True,
-            norm_first=True,
+        self.encoder = SwinTransformerEncoder(
+            hidden_dim, nhead, ff_dim, dropout, seq_len, device
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, nlayer)
 
     def forward(self, inputs):
         inputs = self.window_partition(inputs)
@@ -235,12 +234,12 @@ class SwinTransformerBlock(nn.Module):
             self.win_size,
             C,
         )
-        x = x.permute(0, 1, 3, 2, 4, 5)
+        x = x.permute(0, 1, 3, 2, 4, 5).contiguous()
         # S index:
         # win1: 0 ~ win_size**2 - 1
         # win2: win_size**2 ~ 2 * win_size**2 - 1
         # ...
-        x = x.reshape(B, S, C)
+        x = x.view(B, S, C)
         return x
 
     def apply_shifted_win_encoder(
@@ -302,3 +301,69 @@ class SwinTransformerBlock(nn.Module):
         # Default
         else:
             return self.encoder(input_window)
+
+
+class SwinTransformerEncoder(nn.Module):
+    def __init__(self, hidden_dim, nhead, ff_dim, dropout, seq_len, device):
+        super(SwinTransformerEncoder, self).__init__()
+        self.ln1 = nn.LayerNorm(hidden_dim)
+        self.window_based_MSA = WindowBasedMSA(hidden_dim, nhead, device)
+
+        self.ln2 = nn.LayerNorm(hidden_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_dim, ff_dim), nn.GELU(), nn.Linear(ff_dim, hidden_dim)
+        )
+
+    def forward(self, inputs, mask=None):
+        x = self.window_based_MSA(self.ln1(inputs), mask)
+        inter = x + inputs
+        x = self.mlp(self.ln2(inter))
+        outputs = x + inter
+        return outputs
+
+
+class WindowBasedMSA(nn.Module):
+    def __init__(self, hidden_dim, nhead, device):
+        super(WindowBasedMSA, self).__init__()
+        assert hidden_dim % nhead == 0
+        self.device = device
+
+        self.self_attentions = nn.ModuleList()
+        for _ in range(nhead):
+            self_attention = WindowBasedSelfAttention(hidden_dim, nhead)
+            self.self_attentions.append(self_attention)
+
+        self.weight = nn.Linear(hidden_dim, hidden_dim)
+
+    def forward(self, inputs, mask=None):
+        outputs = []
+        for self_attention in self.self_attentions:
+            A = self_attention(inputs, mask)
+            outputs.append(A)
+        outputs = torch.cat(outputs, dim=2)
+
+        outputs = self.weight(outputs)
+        return outputs
+
+
+class WindowBasedSelfAttention(nn.Module):
+    def __init__(self, d_model, nhead):
+        super(WindowBasedSelfAttention, self).__init__()
+        self.q = nn.Linear(d_model, d_model // nhead)
+        self.k = nn.Linear(d_model, d_model // nhead)
+        self.v = nn.Linear(d_model, d_model // nhead)
+
+        self.scale = math.sqrt(d_model)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, inputs, mask=None):
+        Q = self.q(inputs)
+        K_T = torch.transpose(self.k(inputs), 1, 2)
+        V = self.v(inputs)
+
+        if mask is not None:
+            A = torch.matmul(self.softmax(torch.matmul(Q, K_T) / self.scale) + mask, V)
+        else:
+            A = torch.matmul(self.softmax(torch.matmul(Q, K_T) / self.scale), V)
+
+        return A
