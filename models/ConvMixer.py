@@ -5,8 +5,6 @@ import torch.nn.functional as F
 from einops import rearrange
 
 
-# TODO: Depthwise convolution 구현 안되어 있음
-# TODO: fine-tuning 모드에서 이미지 resolution이 다를 때 interpolation 구현
 # TODO: 각종 augmentation & regularization 구현
 class ConvMixer(nn.Module):
     def __init__(
@@ -66,7 +64,9 @@ class ConvMixer(nn.Module):
 class MixerLayer(nn.Module):
     def __init__(self, channel, k):
         super(MixerLayer, self).__init__()
-        self.depthconv = nn.Conv2d(channel, channel, kernel_size=k, padding=k // 2)
+        self.depthconv = nn.Conv2d(
+            channel, channel, kernel_size=k, padding=k // 2, groups=channel
+        )
         self.gelu = nn.GELU()
         self.bn1 = nn.BatchNorm2d(channel)
 
@@ -78,3 +78,58 @@ class MixerLayer(nn.Module):
         x = inputs + x
         x = self.bn2(self.gelu(self.pointconv(x)))
         return x
+
+
+# # No parallelization
+# class DepthwiseConvolution(nn.Module):
+#     def __init__(self, channel, kernel):
+#         super(DepthwiseConvolution, self).__init__()
+#         self.conv_group = nn.ModuleList()
+#         for _ in range(channel):
+#             conv = nn.Conv2d(1, 1, kernel_size=kernel, padding=kernel // 2)
+#             self.conv_group.append(conv)
+
+#     def forward(self, inputs):
+#         outputs = []
+#         for i, conv in enumerate(self.conv_group):
+#             # Inputs: batch, channel, H, W
+#             x = conv(inputs[:, i : i + 1, :, :])
+#             outputs.append(x)
+#         outputs = torch.cat(outputs, dim=1)
+
+#         return outputs
+
+
+# # Parallelization
+# class DepthwiseConvolution(nn.Module):
+#     def __init__(self, channel, kernel):
+#         super(DepthwiseConvolution, self).__init__()
+#         self.channel = channel
+#         self.kernel = kernel
+
+#         self.convs = nn.ModuleList()
+#         for _ in range(channel):
+#             conv = nn.Conv2d(1, 1, kernel_size=kernel, padding=kernel // 2)
+#             self.convs.append(conv)
+
+#     def forward(self, inputs):
+#         # W: channel, channel, kernel, kernel
+#         weight = torch.zeros(
+#             (self.channel, self.channel, self.kernel, self.kernel),
+#             device=inputs.device,
+#             dtype=inputs.dtype,
+#         )
+#         # Bias: channel,
+#         bias = torch.zeros((self.channel,), device=inputs.device, dtype=inputs.dtype)
+
+#         for i, conv in enumerate(self.convs):
+#             # Place weight on diagonals
+#             # Each out_channel value is only determined by one in_channel
+#             weight[i, i] = conv.weight.data.squeeze(0)
+#             bias[i] = conv.bias.data
+
+#         outputs = F.conv2d(
+#             inputs, weight=weight, bias=bias, stride=1, padding=self.kernel // 2
+#         )
+
+#         return outputs

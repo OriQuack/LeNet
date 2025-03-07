@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# TODO: ResNeXt의 depthwise convolution 구현 안되어 있음
+
 # TODO: 각종 augmentation & regularization 구현
 class ConvNeXt(nn.Module):
     def __init__(
@@ -60,18 +60,18 @@ class ConvNeXt(nn.Module):
 class ConvNeXtBlock(nn.Module):
     def __init__(self, channel):
         super(ConvNeXtBlock, self).__init__()
-        self.conv1 = nn.Conv2d(channel, channel, 7, padding=3)
+        self.depthwise_conv = nn.Conv2d(channel, channel, 7, padding=3, groups=channel)
         self.ln = LayerNorm(channel)
 
-        self.conv2 = nn.Conv2d(channel, 4 * channel, 1)
+        self.conv1 = nn.Conv2d(channel, 4 * channel, 1)
         self.gelu = nn.GELU()
 
-        self.conv3 = nn.Conv2d(4 * channel, channel, 1)
+        self.conv2 = nn.Conv2d(4 * channel, channel, 1)
 
     def forward(self, inputs):
-        x = self.ln(self.conv1(inputs))
-        x = self.gelu(self.conv2(x))
-        x = self.conv3(x)
+        x = self.ln(self.depthwise_conv(inputs))
+        x = self.gelu(self.conv1(x))
+        x = self.conv2(x)
 
         outputs = inputs + x
 

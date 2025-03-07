@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from einops import rearrange
 
 
-# TODO: fine-tuning 모드에서 이미지 resolution이 다를 때 interpolation 구현
 # TODO: 각종 augmentation & regularization 구현
 class MLPMixer(nn.Module):
     def __init__(
